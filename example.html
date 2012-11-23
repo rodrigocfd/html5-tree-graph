@@ -1,0 +1,50 @@
+<!--
+Author: Rodrigo César de Freitas Dias.
+Source: https://github.com/rodrigocfd/javascript-tree-graph
+-->
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+	<title>JavaScript HTML5 Tree Graph example usage</title>
+	<script type="text/javascript" src="TreeGraph.js"></script>
+	<script type="text/javascript">
+	function main() {
+		var rootNode = { // example node; image is optional, a full URL to any image
+			name:'head', color:'#BBF', image:null, nodes:[
+				{ name:'hello', color:'#DDD', image:null, nodes:[] },
+				{ name:'world', color:'#9DD', image:null, nodes:[
+					{ name:'other node', color:'#7EBDE8', image:null, nodes:[] },
+					{ name:'red', color:'red', image:null, nodes:[] }
+				] },
+				{ name:'ba dum tss', color:'#DD9', image:null, nodes:[
+					{ name:'little one', color:'#F2C9F1', image:null, nodes:[] },
+					{ name:'lost cause', color:'#B6D991', image:null, nodes:[] },
+					{ name:'round the bend', color:'#F6EB9F', image:null, nodes:[
+						{ name:'chuck', color:'#E3B9B2', image:null, nodes:[] },
+						{ name:'taylor', color:'#A1F3DC', image:null, nodes:[] }
+					] }
+				] },
+				{ name:'a child', color:'#D9D', image:null, nodes:[] }
+			]
+		};
+
+		var tree = new TreeGraph('myTree'); // instantiate passing canvas ID
+		tree.load(rootNode);
+		tree.onCtrlClick(function(nodeObj) { // Ctrl+click event, optional
+			alert('You clicked node "' + nodeObj.name + '":\n' +
+				'Children nodes: ' + nodeObj.nodes.length + '\n' +
+				'Depth: ' + nodeObj.depth + '\n' +
+				'Expanded: ' + nodeObj.isExpanded);
+		});
+	}
+	</script>
+</head>
+<body onload="main()">
+	<h2>JavaScript HTML5 Tree Graph example usage</h2>
+	<p>Click a node to expand.<br/>
+		Ctrl+click to custom action.</p>
+
+	<!-- This is the canvas where the tree will be rendered upon. -->
+	<canvas id="myTree"></canvas>
+</body>
+</html>
