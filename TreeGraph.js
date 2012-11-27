@@ -128,8 +128,8 @@ TreeGraph.prototype._applyCoordinates = function() {
 	for(var i = 0; i < this.visibleMatrix.length; ++i) {
 		for(var j = 0; j < this.visibleMatrix[i].length; ++j) {
 			var div = document.getElementById(this.visibleMatrix[i][j].id);
-			div.style.left = this.visibleMatrix[i][j].x + off.x;
-			div.style.top = this.visibleMatrix[i][j].y + off.y;
+			div.style.left = (this.visibleMatrix[i][j].x + off.x) + 'px';
+			div.style.top = (this.visibleMatrix[i][j].y + off.y) + 'px';
 		}
 	}
 }
@@ -339,8 +339,8 @@ TreeGraph.prototype._newDiv = function(x, y, id, caption, color, image) {
 		newd.addEventListener('click', function(ev) { _this._onClick(ev, id); }, false);
 	}
 	newd.style.background = color;
-	newd.style.left = x;
-	newd.style.top = y;
+	newd.style.left = x + 'px';
+	newd.style.top = y + 'px';
 	return newd; // return DIV object
 }
 
