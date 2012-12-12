@@ -1,19 +1,25 @@
 /**
  * Description: tree graph with JavaScript and HTML5.
- * Dependency: none.
- * Author: Rodrigo César de Freitas Dias.
+ * Dependencies: none.
+ * Author: Rodrigo Cesar de Freitas Dias.
  * Date: Sep 17, 2012.
  * Source: https://github.com/rodrigocfd/javascript-tree-graph
  * License: you can use it wherever you want, as long as you keep this header intact.
  */
 
-function TreeGraph(canvasId) {
+function TreeGraph(divId) {
 	TreeGraph.nextIndex = 0;
 	this.rootNode = null;
 	this.visibleMatrix = []; // rebuilt each redraw
 	this.maxDepth = 0; // set once by _setupNode()
-	this.canvas = document.getElementById(canvasId);
-	this.context = this.canvas.getContext('2d');
+	document.getElementById(divId) // create DIV inside user DIV
+		.appendChild(this.div = document.createElement('div'));
+	this.div.style.position = 'relative';
+	this.div.style.width = '100%';
+	this.div.style.height = '100%';
+	this.div.style.overflow = 'auto';
+	this.div.appendChild(this.canvas = document.createElement('canvas'));
+	this.context = this.canvas.getContext('2d'); // just to speed up drawing
 	this.callbackCtrlClick = null; // user callback
 	this.interNodeXRoom = 40;
 	this.interNodeYRoom = 8;
@@ -124,12 +130,11 @@ TreeGraph.prototype._setupNode = function(baseNode, _depth) {
 }
 
 TreeGraph.prototype._applyCoordinates = function() {
-	var off = { x:this.canvas.offsetLeft, y:this.canvas.offsetTop };
 	for(var i = 0; i < this.visibleMatrix.length; ++i) {
 		for(var j = 0; j < this.visibleMatrix[i].length; ++j) {
 			var div = document.getElementById(this.visibleMatrix[i][j].id);
-			div.style.left = (this.visibleMatrix[i][j].x + off.x) + 'px';
-			div.style.top = (this.visibleMatrix[i][j].y + off.y) + 'px';
+			div.style.left = this.visibleMatrix[i][j].x + 'px';
+			div.style.top = this.visibleMatrix[i][j].y + 'px'; // relative to container DIV
 		}
 	}
 }
@@ -324,17 +329,18 @@ TreeGraph.prototype._newDiv = function(x, y, id, caption, color, image) {
 		newd = document.createElement('div');
 		newd.id = id;
 		newd.innerHTML = (image === undefined || image === null || image == '') ? caption :
-			('<table style="border-collapse:collapse; white-space:nowrap;">' +
+			('<table style="border-collapse:collapse;">' +
 			'<tr><td><img src="' + image + '" width="' + this.cssStuff.iconSize + '" ' +
 				'height="' + this.cssStuff.iconSize + '"/></td>' +
 			'<td style="color:' + this.cssStuff.textColor + ';">' + caption + '</td></tr></table>');
 		newd.style.textAlign = 'center';
+		newd.style.whiteSpace = 'nowrap';
 		newd.style.color = this.cssStuff.nodeDivColor;
 		newd.style.padding = this.cssStuff.nodeDivPadding + 'px';
 		newd.style.border = this.cssStuff.nodeDivBorder + 'px solid ' + this.cssStuff.nodeDivBorderColor;
 		newd.style.cursor = 'pointer';
 		newd.style.position = 'absolute';
-		document.body.appendChild(newd);
+		this.div.appendChild(newd);
 		var _this = this;
 		newd.addEventListener('click', function(ev) { _this._onClick(ev, id); }, false);
 	}

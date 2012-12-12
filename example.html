@@ -31,7 +31,7 @@ Source: https://github.com/rodrigocfd/javascript-tree-graph
 			]
 		};
 
-		var tree = new TreeGraph('myTree'); // instantiate passing canvas ID
+		var tree = new TreeGraph('container'); // instantiate passing DIV ID
 		tree.load(rootNode);
 		tree.onCtrlClick(function(nodeObj) { // Ctrl+click event, optional
 			alert('You clicked node "' + nodeObj.name + '":\n' +
@@ -47,7 +47,7 @@ Source: https://github.com/rodrigocfd/javascript-tree-graph
 	<p>Click a node to expand.<br/>
 		Ctrl+click to custom action.</p>
 
-	<!-- This is the canvas where the tree will be rendered upon. -->
-	<canvas id="myTree"></canvas>
+	<!-- This is the DIV where the tree will be rendered upon. -->
+	<div id="container" style="width:250px; height:150px;"></div>
 </body>
 </html>
