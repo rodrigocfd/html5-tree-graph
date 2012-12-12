@@ -20,7 +20,7 @@ function TreeGraph(divId) {
 	this.div.style.overflow = 'auto';
 	this.div.appendChild(this.canvas = document.createElement('canvas'));
 	this.context = this.canvas.getContext('2d'); // just to speed up drawing
-	this.callbackCtrlClick = null; // user callback
+	this.callbacks = { ctrlClick:null, noChildren:null }; // user callbacks
 	this.interNodeXRoom = 40;
 	this.interNodeYRoom = 8;
 	this.interBranchYGap = 10;
@@ -112,7 +112,12 @@ TreeGraph.prototype.collapseAll = function() {
 
 TreeGraph.prototype.onCtrlClick = function(callback) {
 	// Pass callback(nodeObj) to set; pass null to remove.
-	this.callbackCtrlClick = callback;
+	this.callbacks.ctrlClick = callback;
+}
+
+TreeGraph.prototype.onNoChildren = function(callback) {
+	// Pass callback(nodeObj) to set; pass null to remove.
+	this.callbacks.noChildren = callback;
 }
 
 TreeGraph.prototype._setupNode = function(baseNode, _depth) {
@@ -402,12 +407,17 @@ TreeGraph.prototype._buildReturnNodeObj = function(baseNode) {
 }
 
 TreeGraph.prototype._onClick = function(ev, id) {
-	window.getSelection().removeAllRanges();
+	window.getSelection().removeAllRanges(); // clear any accidental text selection
 	var node = this._findNode(this.rootNode, id);
-	if(ev.ctrlKey && this.callbackCtrlClick !== null)
-		this.callbackCtrlClick(this._buildReturnNodeObj(node)); // invoke user callback
+	if(ev.ctrlKey && this.callbacks.ctrlClick !== null)
+		this.callbacks.ctrlClick(this._buildReturnNodeObj(node)); // invoke user callback, pass node
 	else {
-		if(!node.nodes.length) alert('This node has no child nodes to be expanded.');
+		if(!node.nodes.length) {
+			if(this.callbacks.noChildren === null)
+				alert('This node has no child nodes to be expanded.');
+			else
+				this.callbacks.noChildren(this._buildReturnNodeObj(node)); // invoke user callback, pass node
+		}
 		node.isExpanded = !node.isExpanded;
 		if(!node.isExpanded)
 			for(var i = 0; i < node.nodes.length; ++i)
