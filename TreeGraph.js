@@ -39,12 +39,13 @@ TreeGraph.prototype.load = function(treeObj) {
 	this.rootNode = treeObj;
 	this._setupNode(this.rootNode); // unique IDs on all nodes, and more
 	TreeGraph.nextIndex = 0; // so that nodes will receive same ID upon subsequent reloads
-	if(localStorage.getItem('rootNode') !== null) { // we previously stored a tree
-		var oldTree = JSON.parse(localStorage.getItem('rootNode'));
+	var storName = this.div.parentNode.id + '_rootNode';
+	if(localStorage.getItem(storName) !== null) { // we previously stored this tree
+		var oldTree = JSON.parse(localStorage.getItem(storName));
 		if(this._isSameTree(this.rootNode, oldTree)) // being reloaded, so reload the node folding
 			this._copyNodeFolding(this.rootNode, oldTree);
 	}
-	localStorage.setItem('rootNode', JSON.stringify(this.rootNode)); // store our tree
+	localStorage.setItem(storName, JSON.stringify(this.rootNode)); // store our tree
 	this.redraw();
 }
 
@@ -90,7 +91,7 @@ TreeGraph.prototype.countNodes = function(_baseNode) {
 TreeGraph.prototype.expandAll = function(_baseNode) {
 	if(_baseNode === undefined) {
 		this.expandAll(this.rootNode);
-		localStorage.setItem('rootNode', JSON.stringify(this.rootNode)); // store our tree state
+		localStorage.setItem(this.div.parentNode.id + '_rootNode', JSON.stringify(this.rootNode)); // store our tree state
 		this.redraw();
 	}
 	else {
@@ -106,7 +107,7 @@ TreeGraph.prototype.collapseAll = function() {
 			this.visibleMatrix[i][j].isExpanded = false;
 	for(var i = 0; i < this.visibleMatrix[1].length; ++i)
 		this._removeDiv(this.visibleMatrix[1][i]);
-	localStorage.setItem('rootNode', JSON.stringify(this.rootNode)); // store our tree state
+	localStorage.setItem(this.div.parentNode.id + '_rootNode', JSON.stringify(this.rootNode)); // store our tree state
 	this.redraw();
 }
 
@@ -121,7 +122,7 @@ TreeGraph.prototype.onNoChildren = function(callback) {
 }
 
 TreeGraph.prototype._setupNode = function(baseNode, _depth) {
-	baseNode.id = 'n' + TreeGraph.nextIndex++; // using global indexer
+	baseNode.id = this.div.parentNode.id + '_' + TreeGraph.nextIndex++; // using global indexer
 	baseNode.isExpanded = false;
 	baseNode.depth = _depth === undefined ? 0 : _depth; // zero-based
 	if(this.maxDepth < baseNode.depth) this.maxDepth = baseNode.depth;
@@ -422,7 +423,7 @@ TreeGraph.prototype._onClick = function(ev, id) {
 		if(!node.isExpanded)
 			for(var i = 0; i < node.nodes.length; ++i)
 				this._removeDiv(node.nodes[i]); // remove children if collapsed
-		localStorage.setItem('rootNode', JSON.stringify(this.rootNode)); // store our tree state
+		localStorage.setItem(this.div.parentNode.id + '_rootNode', JSON.stringify(this.rootNode)); // store our tree state
 		this.redraw();
 	}
 }
