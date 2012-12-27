@@ -35,7 +35,11 @@ function TreeGraph(divId) {
 }
 
 TreeGraph.prototype.load = function(treeObj) {
-	// node = { name,color,image,nodes };
+	// The treeObj is the root node of the tree.
+	// node = { name,tooltip,color,image,nodes[],data };
+	// - image is a full URL.
+	// - nodes[] is the array of all child nodes.
+	// - data holds any user data.
 	this.rootNode = treeObj;
 	this._setupNode(this.rootNode); // unique IDs on all nodes, and more
 	TreeGraph.nextIndex = 0; // so that nodes will receive same ID upon subsequent reloads
@@ -65,8 +69,7 @@ TreeGraph.prototype.redraw = function(_baseNode) {
 	else { // initial static arrangement
 		var siblings = this.visibleMatrix[_baseNode.depth]; // column to which we belong
 		var iSib = this._findNodeIndexWithinArray(siblings, _baseNode);
-		var div = this._newDiv(0, 0, // stuck in corner
-			_baseNode.id, _baseNode.name, _baseNode.color, _baseNode.image);
+		var div = this._newDiv(0, 0, _baseNode); // create physical DIV stuck in corner
 		var sz = this._computeSize(div);
 		_baseNode.cx = sz.cx; _baseNode.cy = sz.cy;
 		_baseNode.roomy = _baseNode.cy + this.interNodeYRoom;
@@ -280,15 +283,6 @@ TreeGraph.prototype._alignToChildren = function(node) {
 	node.setY(yTop + (yBot - yTop) / 2);
 }
 
-TreeGraph.prototype._findNode = function(baseNode, id) {
-	if(baseNode.id == id) return baseNode;
-	for(var i = 0; i < baseNode.nodes.length; ++i) {
-		var found = this._findNode(baseNode.nodes[i], id);
-		if(found !== null) return found;
-	}
-	return null;
-}
-
 TreeGraph.prototype._findVisibleNodes = function(depth, _baseNode) {
 	if(_baseNode === undefined) _baseNode = this.rootNode;
 	var nodes = [];
@@ -329,16 +323,18 @@ TreeGraph.prototype._drawLines = function(_node) {
 	}
 }
 
-TreeGraph.prototype._newDiv = function(x, y, id, caption, color, image) {
-	var newd = document.getElementById(id);
+TreeGraph.prototype._newDiv = function(x, y, node) {
+	var newd = document.getElementById(node.id);
 	if(newd === null) { // not created yet?
 		newd = document.createElement('div');
-		newd.id = id;
-		newd.innerHTML = (image === undefined || image === null || image == '') ? caption :
+		newd.id = node.id;
+		newd.innerHTML = (node.image === undefined || node.image === null || node.image == '') ?
+			node.name :
 			('<table style="border-collapse:collapse;">' +
-			'<tr><td><img src="' + image + '" width="' + this.cssStuff.iconSize + '" ' +
+			'<tr><td><img src="' + node.image + '" width="' + this.cssStuff.iconSize + '" ' +
 				'height="' + this.cssStuff.iconSize + '"/></td>' +
-			'<td style="color:' + this.cssStuff.textColor + ';">' + caption + '</td></tr></table>');
+			'<td style="color:' + this.cssStuff.textColor + ';">' + node.name + '</td></tr></table>');
+		if(node.tooltip !== undefined && node.tooltip !== null) newd.title = node.tooltip;
 		newd.style.textAlign = 'center';
 		newd.style.whiteSpace = 'nowrap';
 		newd.style.color = this.cssStuff.nodeDivColor;
@@ -348,9 +344,9 @@ TreeGraph.prototype._newDiv = function(x, y, id, caption, color, image) {
 		newd.style.position = 'absolute';
 		this.div.appendChild(newd);
 		var _this = this;
-		newd.addEventListener('click', function(ev) { _this._onClick(ev, id); }, false);
+		newd.addEventListener('click', function(ev) { _this._onClick(ev, node); }, false);
 	}
-	newd.style.background = color;
+	newd.style.background = node.color;
 	newd.style.left = x + 'px';
 	newd.style.top = y + 'px';
 	return newd; // return DIV object
@@ -396,6 +392,7 @@ TreeGraph.prototype._line = function(node1, node2) {
 TreeGraph.prototype._buildReturnNodeObj = function(baseNode) {
 	var ret = { // node object to be returned to user on Ctrl+click event
 		name: baseNode.name,
+		data: baseNode.data,
 		color: baseNode.color,
 		depth: baseNode.depth,
 		image: baseNode.image,
@@ -407,9 +404,8 @@ TreeGraph.prototype._buildReturnNodeObj = function(baseNode) {
 	return ret;
 }
 
-TreeGraph.prototype._onClick = function(ev, id) {
+TreeGraph.prototype._onClick = function(ev, node) {
 	window.getSelection().removeAllRanges(); // clear any accidental text selection
-	var node = this._findNode(this.rootNode, id);
 	if(ev.ctrlKey && this.callbacks.ctrlClick !== null)
 		this.callbacks.ctrlClick(this._buildReturnNodeObj(node)); // invoke user callback, pass node
 	else {
