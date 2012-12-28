@@ -49,7 +49,7 @@ TreeGraph.prototype.load = function(treeObj) {
 		if(this._isSameTree(this.rootNode, oldTree)) // being reloaded, so reload the node folding
 			this._copyNodeFolding(this.rootNode, oldTree);
 	}
-	localStorage.setItem(storName, JSON.stringify(this.rootNode)); // store our tree
+	this._storeCurrentTree();
 	this.redraw();
 }
 
@@ -58,7 +58,7 @@ TreeGraph.prototype.redraw = function(_baseNode) {
 		this.visibleMatrix = []; // rebuild
 		for(var i = 0; i <= this.maxDepth; ++i)
 			this.visibleMatrix.push(this._findVisibleNodes(i));
-		this.redraw(this.rootNode); // halt
+		this.redraw(this.rootNode); // will halt until return
 		this._adjustInternalNodes();
 		this._increaseBranchGap();
 		this._adjustHorizontally();
@@ -66,20 +66,20 @@ TreeGraph.prototype.redraw = function(_baseNode) {
 		this._applyCoordinates();
 		this._drawLines();
 	}
-	else { // initial static arrangement
+	else { // initial static-positioned arrangement
 		var siblings = this.visibleMatrix[_baseNode.depth]; // column to which we belong
 		var iSib = this._findNodeIndexWithinArray(siblings, _baseNode);
 		var div = this._newDiv(0, 0, _baseNode); // create physical DIV stuck in corner
 		var sz = this._computeSize(div);
 		_baseNode.cx = sz.cx; _baseNode.cy = sz.cy;
-		_baseNode.roomy = _baseNode.cy + this.interNodeYRoom;
-		_baseNode.x = _baseNode.depth * 60; // arbitrary
+		_baseNode.roomy = _baseNode.cy + this.interNodeYRoom; // node height + spacing between nodes
+		_baseNode.x = _baseNode.depth * 60; // arbitrary x-positioning
 		var yAccum = 0;
 		for(var i = 0; i < iSib; ++i) yAccum += siblings[i].roomy;
 		_baseNode.setBaseY(yAccum);
 		if(_baseNode.isExpanded)
 			for(var i = 0; i < _baseNode.nodes.length; ++i)
-				this.redraw(_baseNode.nodes[i]);
+				this.redraw(_baseNode.nodes[i]); // draw children, only if we're expanded
 	}
 }
 
@@ -94,7 +94,7 @@ TreeGraph.prototype.countNodes = function(_baseNode) {
 TreeGraph.prototype.expandAll = function(_baseNode) {
 	if(_baseNode === undefined) {
 		this.expandAll(this.rootNode);
-		localStorage.setItem(this.div.parentNode.id + '_rootNode', JSON.stringify(this.rootNode)); // store our tree state
+		this._storeCurrentTree();
 		this.redraw();
 	}
 	else {
@@ -110,7 +110,7 @@ TreeGraph.prototype.collapseAll = function() {
 			this.visibleMatrix[i][j].isExpanded = false;
 	for(var i = 0; i < this.visibleMatrix[1].length; ++i)
 		this._removeDiv(this.visibleMatrix[1][i]);
-	localStorage.setItem(this.div.parentNode.id + '_rootNode', JSON.stringify(this.rootNode)); // store our tree state
+	this._storeCurrentTree();
 	this.redraw();
 }
 
@@ -125,7 +125,7 @@ TreeGraph.prototype.onNoChildren = function(callback) {
 }
 
 TreeGraph.prototype._setupNode = function(baseNode, _depth) {
-	baseNode.id = this.div.parentNode.id + '_' + TreeGraph.nextIndex++; // using global indexer
+	baseNode.id = this.div.parentNode.id + '_node_' + TreeGraph.nextIndex++; // using global indexer
 	baseNode.isExpanded = false;
 	baseNode.depth = _depth === undefined ? 0 : _depth; // zero-based
 	if(this.maxDepth < baseNode.depth) this.maxDepth = baseNode.depth;
@@ -136,6 +136,11 @@ TreeGraph.prototype._setupNode = function(baseNode, _depth) {
 	baseNode.setY = function(y) { this.y = y - this.cy / 2; };
 	for(var i = 0; i < baseNode.nodes.length; ++i)
 		this._setupNode(baseNode.nodes[i], baseNode.depth + 1);
+}
+
+TreeGraph.prototype._storeCurrentTree = function() {
+	var keyName = this.div.parentNode.id + '_rootNode';
+	localStorage.setItem(keyName, JSON.stringify(this.rootNode));
 }
 
 TreeGraph.prototype._applyCoordinates = function() {
@@ -283,6 +288,15 @@ TreeGraph.prototype._alignToChildren = function(node) {
 	node.setY(yTop + (yBot - yTop) / 2);
 }
 
+TreeGraph.prototype._findNodeById = function(baseNode, id) {
+	if(baseNode.id == id) return baseNode; // found
+	for(var i = 0; i < baseNode.nodes.length; ++i) {
+		var found = this._findNodeById(baseNode.nodes[i], id);
+		if(found !== null) return found;
+	}
+	return null;
+}
+
 TreeGraph.prototype._findVisibleNodes = function(depth, _baseNode) {
 	if(_baseNode === undefined) _baseNode = this.rootNode;
 	var nodes = [];
@@ -344,7 +358,12 @@ TreeGraph.prototype._newDiv = function(x, y, node) {
 		newd.style.position = 'absolute';
 		this.div.appendChild(newd);
 		var _this = this;
-		newd.addEventListener('click', function(ev) { _this._onClick(ev, node); }, false);
+		newd.addEventListener('click', function(ev) {
+			// If we pass the node object instead (more logic), this reference would be lost
+			// when the tree is reloaded, therefore further property changes would go away.
+			// That's why we pass the ID, and the node is found through search.
+			_this._onClick(ev, node.id);
+		}, false);
 	}
 	newd.style.background = node.color;
 	newd.style.left = x + 'px';
@@ -392,34 +411,37 @@ TreeGraph.prototype._line = function(node1, node2) {
 TreeGraph.prototype._buildReturnNodeObj = function(baseNode) {
 	var ret = { // node object to be returned to user on Ctrl+click event
 		name: baseNode.name,
-		data: baseNode.data,
+		tooltip: baseNode.tooltip,
 		color: baseNode.color,
-		depth: baseNode.depth,
 		image: baseNode.image,
+		nodes: [],
+		data: baseNode.data,
 		isExpanded: baseNode.isExpanded,
-		nodes:[]
+		depth: baseNode.depth
 	};
 	for(var i = 0; i < baseNode.nodes.length; ++i)
 		ret.nodes.push(this._buildReturnNodeObj(baseNode.nodes[i]));
 	return ret;
 }
 
-TreeGraph.prototype._onClick = function(ev, node) {
+TreeGraph.prototype._onClick = function(ev, nodeid) {
 	window.getSelection().removeAllRanges(); // clear any accidental text selection
-	if(ev.ctrlKey && this.callbacks.ctrlClick !== null)
+	var node = this._findNodeById(this.rootNode, nodeid);
+	if(ev.ctrlKey && this.callbacks.ctrlClick !== null) { // that's a Ctrl+click
 		this.callbacks.ctrlClick(this._buildReturnNodeObj(node)); // invoke user callback, pass node
-	else {
-		if(!node.nodes.length) {
-			if(this.callbacks.noChildren === null)
-				alert('This node has no child nodes to be expanded.');
-			else
-				this.callbacks.noChildren(this._buildReturnNodeObj(node)); // invoke user callback, pass node
-		}
+	}
+	else if(!node.nodes.length) { // node with no children
+		if(this.callbacks.noChildren === null) // no user callback for onNoChildren() event
+			alert('This node has no child nodes to be expanded.');
+		else
+			this.callbacks.noChildren(this._buildReturnNodeObj(node)); // invoke user callback, pass node
+	}
+	else { // node has children
 		node.isExpanded = !node.isExpanded;
 		if(!node.isExpanded)
 			for(var i = 0; i < node.nodes.length; ++i)
 				this._removeDiv(node.nodes[i]); // remove children if collapsed
-		localStorage.setItem(this.div.parentNode.id + '_rootNode', JSON.stringify(this.rootNode)); // store our tree state
+		this._storeCurrentTree();
 		this.redraw();
 	}
 }
