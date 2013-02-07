@@ -1,12 +1,8 @@
-JavaScript HTML5 Tree Graph
+HTML5 Tree Graph
 
-A graphical plotting of a tree graph using pure JavaScript and HTML5, without
+A graphical plotting of a tree graph using HTML5 with pure JavaScript, without
 any other dependencies. Engineered for speed and efficiency.
 
-
-License: You can use, modify and redistribute this code, as long as you keep the
-         comment headers intact.
-
-
-Copyright (c) 2012, Rodrigo Cesar de Freitas Dias.
-All rights reserved.
+--
+Copyright (c) 2012 Rodrigo Cesar de Freitas Dias
+Released under the MIT license, see license.txt for details.

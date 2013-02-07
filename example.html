@@ -1,53 +1,65 @@
 <!--
-Author: Rodrigo Cesar de Freitas Dias.
-Source: https://github.com/rodrigocfd/javascript-tree-graph
--->
+	Tree graph with HTML5 and JavaScript.
+	Date: Sep 17, 2012.
+	Dependencies: none.
+	Source: https://github.com/rodrigocfd/html5-tree-graph
 
+	Copyright (c) 2012 Rodrigo Cesar de Freitas Dias
+	Released under the MIT license, see license.txt for details.
+-->
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
 	"http://www.w3.org/TR/html4/loose.dtd">
 <html>
 <head>
 	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
-	<title>JavaScript HTML5 Tree Graph example usage</title>
+	<title>HTML5 Tree Graph example usage</title>
 	<script type="text/javascript" src="TreeGraph.js"></script>
 	<script type="text/javascript">
 	function main() {
-		var rootNode = { // example node; image is optional, a full URL to any image
-			name:'head', color:'#BBF', image:null, nodes:[
-				{ name:'hello', color:'#DDD', image:null, nodes:[] },
-				{ name:'world', color:'#9DD', image:null, nodes:[
-					{ name:'other node', color:'#7EBDE8', image:null, nodes:[] },
-					{ name:'red', color:'red', image:null, nodes:[] }
+		var rootNode = { // node to be loaded, which can have a lot of optional properties
+			text:'head', color:'#BBF', children:[
+				{ text:'hello', color:'#DDD' },
+				{ text:'world', color:'#9DD', children:[
+					{ text:'other node' },
+					{ text:'red' }
 				] },
-				{ name:'ba dum tss', color:'#DD9', image:null, nodes:[
-					{ name:'little one', color:'#F2C9F1', image:null, nodes:[] },
-					{ name:'lost cause', color:'#B6D991', image:null, nodes:[] },
-					{ name:'round the bend', color:'#F6EB9F', image:null, nodes:[
-						{ name:'chuck', color:'#E3B9B2', image:null, nodes:[] },
-						{ name:'taylor', color:'#A1F3DC', image:null, nodes:[] }
+				{ text:'ba dum tss', children:[
+					{ text:'little one', color:'#F2C9F1' },
+					{ text:'lost cause', color:'#B6D991' },
+					{ text:'round the bend', color:'#F6EB9F', children:[
+						{ text:'chuck', color:'#E3B9B2' },
+						{ text:'taylor', color:'#A1F3DC' }
 					] }
 				] },
-				{ name:'a child', color:'#D9D', image:null, nodes:[] }
+				{ text:'a child', color:'#D9D' }
 			]
 		};
 
-		var tree = new TreeGraph('container'); // instantiate passing DIV ID
+		var tree = TreeGraph('container'); // create instance, pass canvas ID
 		tree.load(rootNode);
-		tree.onCtrlClick(function(nodeObj) { // Ctrl+click event, optional
-			alert('You clicked node "' + nodeObj.name + '":\n' +
-				'Children nodes: ' + nodeObj.nodes.length + '\n' +
+		tree.ctrlClick(function(nodeObj) { // Ctrl+click event handling
+			alert('You clicked node "' + nodeObj.text + '":\n' +
+				'Children nodes: ' + nodeObj.children.length + '\n' +
 				'Depth: ' + nodeObj.depth + '\n' +
 				'Expanded: ' + nodeObj.isExpanded);
+		});
+
+		document.getElementById('exp').addEventListener('click', function(ev) {
+			tree.expandAll();
+			ev.preventDefault();
+		});
+		document.getElementById('col').addEventListener('click', function(ev) {
+			tree.collapseAll();
+			ev.preventDefault();
 		});
 	}
 	</script>
 </head>
 <body onload="main()">
-	<h2>JavaScript HTML5 Tree Graph example usage</h2>
+	<h2>HTML5 Tree Graph example usage</h2>
 	<p>Click a node to expand.<br/>
 		Ctrl+click to custom action.</p>
-
-	<!-- This is the DIV where the tree will be rendered upon. -->
-	<div id="container" style="width:250px; height:150px;"></div>
+	<canvas id="container" width="450" height="250" style="border:1px solid #DDD;"></canvas>
+		<a href="#" id="exp">expand all</a>, <a href="#" id="col">collapse all</a>
 </body>
 </html>

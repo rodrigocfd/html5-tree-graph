@@ -1,447 +1,638 @@
-/**
- * Description: tree graph with JavaScript and HTML5.
- * Dependencies: none.
- * Author: Rodrigo Cesar de Freitas Dias.
+/*!
+ * Tree graph with HTML5 and JavaScript.
  * Date: Sep 17, 2012.
- * Source: https://github.com/rodrigocfd/javascript-tree-graph
- * License: you can use it wherever you want, as long as you keep this header intact.
+ * Dependencies: none.
+ * Source: https://github.com/rodrigocfd/html5-tree-graph
+ *
+ * Copyright (c) 2012 Rodrigo Cesar de Freitas Dias
+ * Released under the MIT license, see license.txt for details.
  */
 
 function TreeGraph(divId) {
-	TreeGraph.nextIndex = 0;
-	this.rootNode = null;
-	this.visibleMatrix = []; // rebuilt each redraw
-	this.maxDepth = 0; // set once by _setupNode()
-	document.getElementById(divId) // create DIV inside user DIV
-		.appendChild(this.div = document.createElement('div'));
-	this.div.style.position = 'relative';
-	this.div.style.width = '100%';
-	this.div.style.height = '100%';
-	this.div.style.overflow = 'auto';
-	this.div.appendChild(this.canvas = document.createElement('canvas'));
-	this.context = this.canvas.getContext('2d'); // just to speed up drawing
-	this.callbacks = { ctrlClick:null, noChildren:null }; // user callbacks
-	this.interNodeXRoom = 40;
-	this.interNodeYRoom = 8;
-	this.interBranchYGap = 10;
-	this.cssStuff = {
-		textColor: '#333',
-		lineColor: '#B6B6B6',
-		nodeDivPadding: 2,
-		nodeDivBorder: 1,
-		nodeDivBorderColor: '#B0B0B0',
-		iconSize: 18
+	var CONSTANTS = {
+		xBoxPadding: 4,
+		yNodePadding: 5,
+		xMinPadding: 30,
+		yBranchGap: 10,
+		xBezierRadius: 14,
+		imgSize: 22, // if not null, will force size for all images
+		font: '11pt "Times New Roman"',
+		color: 'rgba(255,255,255,0.5)', // default for nodes without color
+		borderColor: '#888',
+		lineColor: '#AAA',
+		animateTime: 100
 	};
-}
 
-TreeGraph.prototype.load = function(treeObj) {
-	// The treeObj is the root node of the tree.
-	// node = { name,tooltip,color,image,nodes[],data };
-	// - image is a full URL.
-	// - nodes[] is the array of all child nodes.
-	// - data holds any user data.
-	this.rootNode = treeObj;
-	this._setupNode(this.rootNode); // unique IDs on all nodes, and more
-	TreeGraph.nextIndex = 0; // so that nodes will receive same ID upon subsequent reloads
-	var storName = this.div.parentNode.id + '_rootNode';
-	if(localStorage.getItem(storName) !== null) { // we previously stored this tree
-		var oldTree = JSON.parse(localStorage.getItem(storName));
-		if(this._isSameTree(this.rootNode, oldTree)) // being reloaded, so reload the node folding
-			this._copyNodeFolding(this.rootNode, oldTree);
-	}
-	this._storeCurrentTree();
-	this.redraw();
-}
-
-TreeGraph.prototype.redraw = function(_baseNode) {
-	if(_baseNode === undefined) { // redraw whole tree
-		this.visibleMatrix = []; // rebuild
-		for(var i = 0; i <= this.maxDepth; ++i)
-			this.visibleMatrix.push(this._findVisibleNodes(i));
-		this.redraw(this.rootNode); // will halt until return
-		this._adjustInternalNodes();
-		this._increaseBranchGap();
-		this._adjustHorizontally();
-		this._fitIntoCanvas();
-		this._applyCoordinates();
-		this._drawLines();
-	}
-	else { // initial static-positioned arrangement
-		var siblings = this.visibleMatrix[_baseNode.depth]; // column to which we belong
-		var iSib = this._findNodeIndexWithinArray(siblings, _baseNode);
-		var div = this._newDiv(0, 0, _baseNode); // create physical DIV stuck in corner
-		var sz = this._computeSize(div);
-		_baseNode.cx = sz.cx; _baseNode.cy = sz.cy;
-		_baseNode.roomy = _baseNode.cy + this.interNodeYRoom; // node height + spacing between nodes
-		_baseNode.x = _baseNode.depth * 60; // arbitrary x-positioning
-		var yAccum = 0;
-		for(var i = 0; i < iSib; ++i) yAccum += siblings[i].roomy;
-		_baseNode.setBaseY(yAccum);
-		if(_baseNode.isExpanded)
-			for(var i = 0; i < _baseNode.nodes.length; ++i)
-				this.redraw(_baseNode.nodes[i]); // draw children, only if we're expanded
-	}
-}
-
-TreeGraph.prototype.countNodes = function(_baseNode) {
-	if(_baseNode === undefined) _baseNode = this.rootNode;
-	var count = 1;
-	for(var i = 0; i < _baseNode.nodes.length; ++i)
-		count += this.countNodes(_baseNode.nodes[i]);
-	return count;
-}
-
-TreeGraph.prototype.expandAll = function(_baseNode) {
-	if(_baseNode === undefined) {
-		this.expandAll(this.rootNode);
-		this._storeCurrentTree();
-		this.redraw();
-	}
-	else {
-		_baseNode.isExpanded = true;
-		for(var i = 0; i < _baseNode.nodes.length; ++i)
-			this.expandAll(_baseNode.nodes[i]);
-	}
-}
-
-TreeGraph.prototype.collapseAll = function() {
-	for(var i = 0; i < this.visibleMatrix.length; ++i)
-		for(var j = 0; j < this.visibleMatrix[i].length; ++j)
-			this.visibleMatrix[i][j].isExpanded = false;
-	for(var i = 0; i < this.visibleMatrix[1].length; ++i)
-		this._removeDiv(this.visibleMatrix[1][i]);
-	this._storeCurrentTree();
-	this.redraw();
-}
-
-TreeGraph.prototype.onCtrlClick = function(callback) {
-	// Pass callback(nodeObj) to set; pass null to remove.
-	this.callbacks.ctrlClick = callback;
-}
-
-TreeGraph.prototype.onNoChildren = function(callback) {
-	// Pass callback(nodeObj) to set; pass null to remove.
-	this.callbacks.noChildren = callback;
-}
-
-TreeGraph.prototype._setupNode = function(baseNode, _depth) {
-	baseNode.id = this.div.parentNode.id + '_node_' + TreeGraph.nextIndex++; // using global indexer
-	baseNode.isExpanded = false;
-	baseNode.depth = _depth === undefined ? 0 : _depth; // zero-based
-	if(this.maxDepth < baseNode.depth) this.maxDepth = baseNode.depth;
-	baseNode.x = baseNode.y = baseNode.cx = baseNode.cy = baseNode.roomy = 0;
-	var _this = this;
-	baseNode.getBaseY = function() { return this.y + this.cy / 2 - this.roomy / 2; };
-	baseNode.setBaseY = function(y) { this.y = y - this.cy / 2 + this.roomy / 2; };
-	baseNode.setY = function(y) { this.y = y - this.cy / 2; };
-	for(var i = 0; i < baseNode.nodes.length; ++i)
-		this._setupNode(baseNode.nodes[i], baseNode.depth + 1);
-}
-
-TreeGraph.prototype._storeCurrentTree = function() {
-	var keyName = this.div.parentNode.id + '_rootNode';
-	localStorage.setItem(keyName, JSON.stringify(this.rootNode));
-}
-
-TreeGraph.prototype._applyCoordinates = function() {
-	for(var i = 0; i < this.visibleMatrix.length; ++i) {
-		for(var j = 0; j < this.visibleMatrix[i].length; ++j) {
-			var div = document.getElementById(this.visibleMatrix[i][j].id);
-			div.style.left = this.visibleMatrix[i][j].x + 'px';
-			div.style.top = this.visibleMatrix[i][j].y + 'px'; // relative to container DIV
-		}
-	}
-}
-
-TreeGraph.prototype._fitIntoCanvas = function() {
-	var ymin = 0; // topmost Y plotting point
-	for(var i = 0; i <= this.maxDepth; ++i) {
-		var siblings = this.visibleMatrix[i]; // nodes of column i
-		if(!siblings.length) break;
-		var y = siblings[0].getBaseY();
-		if(ymin > y) ymin = y;
-	}
-	this._moveNodesDown(this.rootNode, -ymin);
-	var ymax = 0; // bottommost Y plotting point
-	for(var i = 0; i <= this.maxDepth; ++i) {
-		var siblings = this.visibleMatrix[i];
-		if(!siblings.length) break;
-		var y = siblings[siblings.length - 1].getBaseY()
-			+ siblings[siblings.length - 1].roomy;
-		if(ymax < y) ymax = y;
-	}
-	this.canvas.height = ymax;
-	var xmax = 0; // rightmost X plotting point
-	for(var i = this.maxDepth; i >= 0; --i) {
-		var siblings = this.visibleMatrix[i];
-		if(!siblings.length) continue;
-		for(var j = 0; j < siblings.length; ++j)
-			if(siblings[j].x + siblings[j].cx > xmax)
-				xmax = siblings[j].x + siblings[j].cx;
-		break;
-	}
-	this.canvas.width = xmax + 5;
-}
-
-TreeGraph.prototype._removeDiv = function(node) {
-	for(var i = 0; i < node.nodes.length; ++i) {
-		var child = document.getElementById(node.nodes[i].id);
-		if(child !== null)
-			this._removeDiv(node.nodes[i]);
-	}
-	var div = document.getElementById(node.id);
-	div.parentNode.removeChild(div);
-}
-
-TreeGraph.prototype._adjustInternalNodes = function() {
-	for(var iDep = this.maxDepth - 1; iDep >= 0; --iDep) { // bypass deepmost level
-		var siblings = this.visibleMatrix[iDep]; // nodes of column iDep
-		var iLastParent = -1;
-		for(var iSib = 0; iSib < siblings.length; ++iSib) { // each node of column
-			if(siblings[iSib].nodes.length && siblings[iSib].isExpanded) { // parent, not internal leaf
-				this._alignToChildren(siblings[iSib]);
-				if(iLastParent == -1) { // we're 1st parent of this column
-					var yAccum = siblings[iSib].getBaseY();
-					for(var i = iSib - 1; i >= 0; --i) { // leaf nodes above 1st parent
-						yAccum -= siblings[i].roomy;
-						siblings[i].setBaseY(yAccum);
-					}
-				}
-				else if(iLastParent > -1) { // parent node, but not 1st; fail-safe when root
-					var yTop = siblings[iLastParent].getBaseY() + siblings[iLastParent].roomy;
-					var yBot = siblings[iSib].getBaseY();
-					var yMinRoom = 0;
-					for(var i = iLastParent + 1; i < iSib; ++i) yMinRoom += siblings[i].roomy;
-					if(yMinRoom > yBot - yTop)
-						for(var i = iSib; i < siblings.length; ++i) // everyone beyond moves down
-							this._moveNodesDown(siblings[i], yMinRoom - (yBot - yTop));
-					for(var i = iLastParent + 1; i < iSib; ++i) { // internal leaves
-						var yPercent = siblings[i].roomy / yMinRoom;
-						siblings[i].setY(yTop + yPercent * Math.max(yMinRoom, yBot - yTop) / 2);
-						yTop += yPercent * Math.max(yMinRoom, yBot - yTop);
-					}
-				}
-				iLastParent = iSib; // we're last parent now
-			}
-		}
-		if(iLastParent > -1) { // fail-safe when root
-			var yAccum = siblings[iLastParent].getBaseY() + siblings[iLastParent].roomy;
-			for(var i = iLastParent + 1; i < siblings.length; ++i) { // leaf nodes beyond bottom parent
-				siblings[i].setBaseY(yAccum);
-				yAccum += siblings[i].roomy;
-			}
-		}
-	}
-}
-
-TreeGraph.prototype._increaseBranchGap = function(_baseNode) {
-	if(_baseNode === undefined) _baseNode = this.rootNode;
-	var yMoved = 0;
-	var firstParent = true;
-	for(var i = 0; i < _baseNode.nodes.length; ++i) {
-		var child = _baseNode.nodes[i];
-		if(child.nodes.length && child.isExpanded) { // parent, not leaf
-			if(firstParent) firstParent = false; // skip 1st parent
-			else {
-				for(var n = i; n < _baseNode.nodes.length; ++n)
-					this._moveNodesDown(_baseNode.nodes[n], this.interBranchYGap); // move down us and beyond
-				yMoved += this.interBranchYGap;
-			}
-			var yInc = this._increaseBranchGap(child);
-			for(var n = i + 1; n < _baseNode.nodes.length; ++n)
-				this._moveNodesDown(_baseNode.nodes[n], yInc); // move down again, everyone beyond
-			yMoved += yInc;
-		}
-	}
-	this._alignToChildren(_baseNode);
-	return yMoved;
-}
-
-TreeGraph.prototype._adjustHorizontally = function() {
-	for(var iDep = 1; iDep <= this.maxDepth; ++iDep) {
-		var ourNodes = this.visibleMatrix[iDep];
-		if(!ourNodes.length) break;
-		var off = 0;
-		var prevNodes = this.visibleMatrix[iDep - 1];
-		var xNodeGap = this.interNodeXRoom;
-		for(var i = 0; i < prevNodes.length; ++i) {
-			if(off < prevNodes[i].x + prevNodes[i].cx + xNodeGap)
-				off = prevNodes[i].x + prevNodes[i].cx + xNodeGap;
-		}
-		for(var i = 0; i < ourNodes.length; ++i)
-			ourNodes[i].x = off;
-	}
-}
-
-TreeGraph.prototype._moveNodesDown = function(baseNode, inc) {
-	baseNode.y += inc;
-	if(baseNode.isExpanded)
-		for(var i = 0; i < baseNode.nodes.length; ++i)
-			this._moveNodesDown(baseNode.nodes[i], inc);
-}
-
-TreeGraph.prototype._alignToChildren = function(node) {
-	if(!node.nodes.length || !node.isExpanded) return;
-	var yTop = node.nodes[0].getBaseY();
-	var yBot = node.nodes[node.nodes.length - 1].getBaseY()
-		+ node.nodes[node.nodes.length - 1].roomy;
-	node.setY(yTop + (yBot - yTop) / 2);
-}
-
-TreeGraph.prototype._findNodeById = function(baseNode, id) {
-	if(baseNode.id == id) return baseNode; // found
-	for(var i = 0; i < baseNode.nodes.length; ++i) {
-		var found = this._findNodeById(baseNode.nodes[i], id);
-		if(found !== null) return found;
-	}
-	return null;
-}
-
-TreeGraph.prototype._findVisibleNodes = function(depth, _baseNode) {
-	if(_baseNode === undefined) _baseNode = this.rootNode;
-	var nodes = [];
-	if(_baseNode.depth === depth) nodes.push(_baseNode);
-	else if(_baseNode.isExpanded)
-		for(var i = 0; i < _baseNode.nodes.length; ++i)
-			nodes = nodes.concat(this._findVisibleNodes(depth, _baseNode.nodes[i]));
-	return nodes;
-}
-
-TreeGraph.prototype._findNodeIndexWithinArray = function(nodesArray, node) {
-	for(var i = 0; i < nodesArray.length; ++i)
-		if(nodesArray[i].id === node.id)
-			return i;
-	return -1;
-}
-
-TreeGraph.prototype._drawLines = function(_node) {
-	var context = this.canvas.getContext('2d');
-	if(_node === undefined) {
-		context.clearRect(0, 0, this.canvas.width, this.canvas.height);
-		this._line(this.rootNode, this.rootNode); // first-redraw fail workaround
-		context.clearRect(0, 0, this.canvas.width, this.canvas.height);
-		_node = this.rootNode;
-	}
-	if(_node.isExpanded) {
-		for(var i = 0; i < _node.nodes.length; ++i) {
-			this._line(_node, _node.nodes[i]); // parent to child
-			this._drawLines(_node.nodes[i]);
-		}
-	}
-	else if(_node.nodes.length) {
-		context.strokeStyle = this.cssStuff.lineColor;
-		context.beginPath();
-		context.arc(_node.x + _node.cx - 1, _node.y + _node.cy / 2,
-			4, Math.PI * 0.5, Math.PI * 1.5, true);
-		context.stroke();
-	}
-}
-
-TreeGraph.prototype._newDiv = function(x, y, node) {
-	var newd = document.getElementById(node.id);
-	if(newd === null) { // not created yet?
-		newd = document.createElement('div');
-		newd.id = node.id;
-		newd.innerHTML = (node.image === undefined || node.image === null || node.image == '') ?
-			node.name :
-			('<table style="border-collapse:collapse;">' +
-			'<tr><td><img src="' + node.image + '" width="' + this.cssStuff.iconSize + '" ' +
-				'height="' + this.cssStuff.iconSize + '"/></td>' +
-			'<td style="color:' + this.cssStuff.textColor + ';">' + node.name + '</td></tr></table>');
-		if(node.tooltip !== undefined && node.tooltip !== null) newd.title = node.tooltip;
-		newd.style.textAlign = 'center';
-		newd.style.whiteSpace = 'nowrap';
-		newd.style.color = this.cssStuff.nodeDivColor;
-		newd.style.padding = this.cssStuff.nodeDivPadding + 'px';
-		newd.style.border = this.cssStuff.nodeDivBorder + 'px solid ' + this.cssStuff.nodeDivBorderColor;
-		newd.style.cursor = 'pointer';
-		newd.style.position = 'absolute';
-		this.div.appendChild(newd);
-		var _this = this;
-		newd.addEventListener('click', function(ev) {
-			// If we pass the node object instead (more logic), this reference would be lost
-			// when the tree is reloaded, therefore further property changes would go away.
-			// That's why we pass the ID, and the node is found through search.
-			_this._onClick(ev, node.id);
-		}, false);
-	}
-	newd.style.background = node.color;
-	newd.style.left = x + 'px';
-	newd.style.top = y + 'px';
-	return newd; // return DIV object
-}
-
-TreeGraph.prototype._computeSize = function(div) {
-	var padding = 2 * this.cssStuff.nodeDivPadding;
-	var border = 2 * this.cssStuff.nodeDivBorder;
-	var comps = window.getComputedStyle(div, null);
-	return {
-		cx: parseInt(comps.width) + padding + border,
-		cy: parseInt(comps.height) + padding + border
+	var Us = {
+		retObj: { }, // object to be returned to TreeGraph() function caller
+		context: document.getElementById(divId).getContext('2d'),
+		rootNode: null,
+		callbacks: { Click:null, CtrlClick:null },
+		isRendering: false,
+		isDragging: false,
+		baseDragPos: null, // when dragging, this is set
+		base: { x:0, y:0 } // current translation, set by dragging
 	};
-}
 
-TreeGraph.prototype._isSameTree = function(root1, root2) {
-	if(root1.name != root2.name || root1.nodes.length != root2.nodes.length)
-		return false;
-	else
-		for(var i = 0; i < root1.nodes.length; ++i)
-			if(!this._isSameTree(root1.nodes[i], root2.nodes[i]))
+	var Util = {
+		AddPropertiesIfNotExist: function AddPropertiesIfNotExist(target, otherObj) {
+			target = target || { }; // http://stackoverflow.com/questions/12317003/something-like-jquery-extend-but-standalone
+			for(var prop in otherObj) {
+				if(target[prop] === undefined) {
+					target[prop] = (otherObj[prop] !== null && typeof otherObj[prop] === 'object') ?
+						AddPropertiesIfNotExist(target[prop], otherObj[prop]) :
+						otherObj[prop];
+				}
+			}
+			return target;
+		},
+
+		CalcTextRect: function CalcTextRect(context, text) {
+			if(CalcTextRect.cache === undefined)
+				CalcTextRect.cache = []; // static variable to cache the calculated heights
+			if(CalcTextRect.cache[context.font] === undefined) {
+				var span = document.createElement('span'),
+					body = document.getElementsByTagName('body')[0];
+				span.style.font = context.font;
+				span.textContent = 'gM'; // http://www.html5rocks.com/en/tutorials/canvas/texteffects/
+				body.appendChild(span);
+				CalcTextRect.cache[context.font] = span.offsetHeight;
+				body.removeChild(span);
+			}
+			return {
+				cx: context.measureText(text).width + CONSTANTS.xBoxPadding * 2,
+				cy: CalcTextRect.cache[context.font]
+			};
+		},
+
+		DrawRect: function(context, x, y, cx, cy, borderColor, bgColor) {
+			x += 0.5; y += 0.5; // http://stackoverflow.com/questions/7545013/canvas-draws-lines-too-thick
+			context.save();
+			if(borderColor !== undefined && borderColor !== null)
+				context.strokeStyle = borderColor;
+			context.beginPath();
+			context.rect(x, y, cx, cy);
+			if(bgColor !== undefined && bgColor !== null) {
+				context.fillStyle = bgColor;
+				context.fill();
+			}
+			context.stroke();
+			context.restore();
+		},
+
+		DrawBezier: function(context, x0, y0, x1, y1) {
+			context.beginPath();
+			context.moveTo(x0, y0);
+			context.bezierCurveTo(x0 + CONSTANTS.xBezierRadius, y0,
+				x1 - CONSTANTS.xBezierRadius, y1,
+				x1, y1);
+			context.stroke(); // use current strokeStyle
+		},
+
+		DrawHalfCircle: function(context, x, y) {
+			context.beginPath();
+			context.arc(x, y, 4, Math.PI * 0.5, Math.PI * 1.5, true);
+			context.stroke(); // use current strokeStyle
+		},
+
+		Animate: function(duration, AnimateCallback, DoneCallback) {
+			var RequestAnimationFrame = window.mozRequestAnimationFrame ||
+				window.webkitRequestAnimationFrame;
+			var t0 = window.mozAnimationStartTime || Date.now();
+			var Redraw = function(timestamp) {
+				var elapsed = (timestamp || Date.now()) - t0;
+				var pct = elapsed / duration;
+				if(pct > 1) pct = 1;
+				AnimateCallback.call(window, pct);
+				if(pct < 1)
+					RequestAnimationFrame(Redraw);
+				else if(DoneCallback !== undefined && DoneCallback !== null)
+					DoneCallback.call(window);
+			};
+			RequestAnimationFrame(Redraw);
+		}
+	};
+
+	var Node = {
+		Load: function(rootNode) {
+			Us.context.font = CONSTANTS.font;
+			Us.rootNode = rootNode;
+			Node.Init();
+			Node.LoadImages(function() {
+				var matrix = Node.VisibleMatrix(); // first positioning
+				Placement.Calc(matrix);
+				Placement.ResetRootPos(matrix);
+				Node.Render(matrix);
+				var events = [ 'mousedown', 'mouseup', 'mouseout', 'mousemove', 'click', 'selectstart' ];
+				var funcs = [ Events.MouseDown, Events.MouseUp, Events.MouseOut,
+					Events.MouseMove, Events.Click, Events.SelectStart ];
+				for(var i = 0; i < events.length; ++i) {
+					Us.context.canvas.removeEventListener(events[i], funcs[i]);
+					Us.context.canvas.addEventListener(events[i], funcs[i]);
+				}
+			});
+		},
+
+		Init: function Init() {
+			if(Init.seq === undefined)
+				Init.seq = 0; // static variable to hold the unique ID
+			function SetupNode(node, depth, parent) {
+				Util.AddPropertiesIfNotExist(node, { // user properties for a node
+					text: '(NO TEXT)',
+					children: [],
+					color: CONSTANTS.color,
+					image: null, // full URL
+					data: null // any user data, will be preserved when returning the node at events
+				});
+				node.id = Init.seq++;
+				node.parent = function() { return parent; };
+				node.depth = depth;
+				node.isExpanded = false;
+				node.imageObj = null; // created if an URL exists in 'image' property
+				var rcText = Util.CalcTextRect(Us.context, node.text);
+				node.rect = { x:0, y:0, cx:rcText.cx, cy:rcText.cy };
+				node.posSch = null; // scheduled position to move to; {x,y}
+				node.posTmp = null; // used within animation
+				for(var i = 0; i < node.children.length; ++i)
+					SetupNode(node.children[i], depth + 1, node);
+			}
+			SetupNode(Us.rootNode, 0, null);
+		},
+
+		LoadImages: function(OnComplete) {
+			var total = 0;
+			function CountImages(node) {
+				total += (node.image === null) ? 0 : 1;
+				for(var i = 0; i < node.children.length; ++i)
+					CountImages(node.children[i]);
+			}
+			function CreateImageObj(node) {
+				function ImageDone(status) {
+					if(status.type === 'error')
+						console.log('Failed to load ' + status.target.src + '".');
+					if(--total === 0 && OnComplete !== undefined)
+						OnComplete();
+				}
+				if(node.image !== null) {
+					node.imageObj = new Image();
+					node.imageObj.src = node.image;
+					node.imageObj.onload = function(status) { // image successfully loaded
+						node.rect.cx += (CONSTANTS.imgSize !== null ? CONSTANTS.imgSize : node.imageObj.width) + 1;
+						node.rect.cy = Math.max(node.rect.cy,
+							(CONSTANTS.imgSize !== null ? CONSTANTS.imgSize : node.imageObj.height) + 1);
+						ImageDone(status);
+					};
+					node.imageObj.onerror = function(status) { // image failed to load
+						node.imageObj = null;
+						ImageDone(status);
+					};
+				}
+				for(var i = 0; i < node.children.length; ++i)
+					CreateImageObj(node.children[i]);
+			}
+			CountImages(Us.rootNode);
+			if(total === 0) {
+				if(OnComplete !== undefined) OnComplete();
+			} else {
+				CreateImageObj(Us.rootNode);
+			}
+		},
+
+		VisibleMatrix: function() {
+			var matrix = []; // a linear view of the nodes that should be rendered
+			function CreateMatrix(node) {
+				if(matrix[node.depth] === undefined)
+					matrix[node.depth] = [];
+				matrix[node.depth].push(node);
+				if(node.isExpanded)
+					for(var i = 0; i < node.children.length; ++i)
+						CreateMatrix(node.children[i]);
+			}
+			CreateMatrix(Us.rootNode);
+			return matrix;
+		},
+
+		AtPoint: function(x, y, visibleMatrix) {
+			x -= Us.base.x; // translate coordinates
+			y -= Us.base.y;
+			for(var i = 0; i < visibleMatrix.length; ++i) {
+				for(var j = 0; j < visibleMatrix[i].length; ++j) {
+					var node = visibleMatrix[i][j];
+					if( (x >= node.rect.x) && (x < node.rect.x + node.rect.cx) &&
+						(y >= node.rect.y) && (y < node.rect.y + node.rect.cy + 4) ) return node; // 4px adjustment, dunno why
+				}
+			}
+			return null; // no node at given point
+		},
+
+		CollapseAll: function() {
+			if(Us.isRendering) return;
+			var matrix = Node.VisibleMatrix();
+			for(var i = 0; i < matrix.length; ++i) {
+				for(var j = 0; j < matrix[i].length; ++j) {
+					matrix[i][j].posSch = { x:0, y:CONSTANTS.yNodePadding };
+					matrix[i][j].isExpanded = false;
+				}
+			}
+			Placement.ResetRootPos(matrix);
+			Node.Render(matrix, function() {
+				Us.rootNode.isExpanded = false;
+				matrix = Node.VisibleMatrix();
+				Placement.Calc(matrix);
+				Placement.ResetRootPos(matrix);
+				Node.Render(matrix); // no animation, remove collapsed
+			});
+		},
+
+		ExpandAll: function() {
+			if(Us.isRendering) return;
+			function MakeExpand(node) {
+				if(node.children.length === 0) return;
+				node.isExpanded = true;
+				for(var i = 0; i < node.children.length; ++i)
+					MakeExpand(node.children[i]);
+			}
+			MakeExpand(Us.rootNode);
+			var matrix = Node.VisibleMatrix(); // will have all the nodes
+			Placement.Calc(matrix);
+			Placement.ResetRootPos(matrix);
+			Node.Render(matrix);
+		},
+
+		Paint: function(visibleMatrix, pct) {
+			Us.context.save();
+			Us.context.clearRect(0, 0, Us.context.canvas.width, Us.context.canvas.height);
+			Us.context.textBaseline = 'middle';
+			for(var i = 0; i < visibleMatrix.length; ++i) {
+				for(var j = 0; j < visibleMatrix[i].length; ++j) {
+					var node = visibleMatrix[i][j];
+					node.posTmp = { x:node.rect.x, y:node.rect.y };
+					if(node.posSch !== null) { // will move
+						node.posTmp.x += (node.posSch.x - node.posTmp.x) * pct; // pct 0 to 1
+						node.posTmp.y += (node.posSch.y - node.posTmp.y) * pct;
+					}
+					Us.context.save();
+					Us.context.strokeStyle = CONSTANTS.lineColor;
+					var parent = node.parent();
+					if(parent !== null) {
+						Util.DrawBezier(Us.context, // apply coordinate translation
+							parent.posTmp.x + parent.rect.cx + Us.base.x,
+							parent.posTmp.y + parent.rect.cy / 2 + Us.base.y,
+							node.posTmp.x + Us.base.x,
+							node.posTmp.y + node.rect.cy / 2 + Us.base.y);
+					}
+					if(node.children.length > 0 && !node.isExpanded) {
+						Util.DrawHalfCircle(Us.context,
+							node.posTmp.x + node.rect.cx + 1  + Us.base.x,
+							node.posTmp.y + node.rect.cy / 2  + Us.base.y + 1);
+					}
+					Us.context.restore();
+					Util.DrawRect(Us.context,
+						node.posTmp.x + Us.base.x, node.posTmp.y + Us.base.y,
+						node.rect.cx, node.rect.cy,
+						CONSTANTS.borderColor, node.color);
+					if(node.imageObj !== null) {
+						if(CONSTANTS.imgSize !== null) { // force image size
+							Us.context.drawImage(node.imageObj,
+								node.posTmp.x + Us.base.x + 1, node.posTmp.y + Us.base.y + 1,
+								CONSTANTS.imgSize, CONSTANTS.imgSize);
+						} else {
+							Us.context.drawImage(node.imageObj,
+								node.posTmp.x + Us.base.x + 1, node.posTmp.y + Us.base.y + 1);
+						}
+					}
+					Us.context.fillText(node.text,
+						node.posTmp.x + CONSTANTS.xBoxPadding + Us.base.x +
+							(node.imageObj !== null ?
+								(CONSTANTS.imgSize !== null ? CONSTANTS.imgSize : node.imageObj.width) + 1
+							: 0),
+						node.posTmp.y + node.rect.cy / 2 + Us.base.y);
+				}
+			}
+			Us.context.restore();
+		},
+
+		Render: function(visibleMatrix, OnComplete) {
+			function HasMove(visibleMatrix) {
+				for(var i = 0; i < visibleMatrix.length; ++i)
+					for(var j = 0; j < visibleMatrix[i].length; ++j)
+						if(visibleMatrix[i][j].posSch !== null)
+							return true; // at least one node will be moved
 				return false;
-	return true;
-}
-
-TreeGraph.prototype._copyNodeFolding = function(destNode, srcNode) {
-	destNode.isExpanded = srcNode.isExpanded;
-	for(var i = 0; i < destNode.nodes.length; ++i) // supposedly the same tree
-		this._copyNodeFolding(destNode.nodes[i], srcNode.nodes[i]);
-}
-
-TreeGraph.prototype._line = function(node1, node2) {
-	this.context.strokeStyle = this.cssStuff.lineColor;
-	this.context.beginPath();
-	this.context.moveTo(node1.x + node1.cx - 1, node1.y + node1.cy / 2);
-	this.context.bezierCurveTo(
-		node1.x + node1.cx + 18, node1.y + node1.cy / 2,
-		node2.x - 18, node2.y + node2.cy / 2,
-		node2.x, node2.y + node2.cy / 2);
-	this.context.stroke();
-}
-
-TreeGraph.prototype._buildReturnNodeObj = function(baseNode) {
-	var ret = { // node object to be returned to user on Ctrl+click event
-		name: baseNode.name,
-		tooltip: baseNode.tooltip,
-		color: baseNode.color,
-		image: baseNode.image,
-		nodes: [],
-		data: baseNode.data,
-		isExpanded: baseNode.isExpanded,
-		depth: baseNode.depth
+			}
+			if(Us.isRendering) return;
+			Us.isRendering = true; // set blocking flag
+			if(HasMove(visibleMatrix)) {
+				Util.Animate(CONSTANTS.animateTime, function(pct) {
+					Node.Paint(visibleMatrix, pct);
+				}, function() { // when animation is finished
+					for(var i = 0; i < visibleMatrix.length; ++i) {
+						for(var j = 0; j < visibleMatrix[i].length; ++j) {
+							var node = visibleMatrix[i][j];
+							if(node.posSch !== null) {
+								node.rect.x = node.posSch.x; // scheduled pos is the current pos now
+								node.rect.y = node.posSch.y;
+								node.posSch = null; // remove pos scheduling
+								node.posTmp = null;
+							}
+						}
+					}
+					Us.isRendering = false; // clear blocking flag
+					if(OnComplete !== undefined) OnComplete();
+				});
+			} else {
+				Node.Paint(visibleMatrix, 1);
+				Us.isRendering = false;
+				if(OnComplete !== undefined) OnComplete();
+			}
+		}
 	};
-	for(var i = 0; i < baseNode.nodes.length; ++i)
-		ret.nodes.push(this._buildReturnNodeObj(baseNode.nodes[i]));
-	return ret;
-}
 
-TreeGraph.prototype._onClick = function(ev, nodeid) {
-	window.getSelection().removeAllRanges(); // clear any accidental text selection
-	var node = this._findNodeById(this.rootNode, nodeid);
-	if(ev.ctrlKey && this.callbacks.ctrlClick !== null) { // that's a Ctrl+click
-		this.callbacks.ctrlClick(this._buildReturnNodeObj(node)); // invoke user callback, pass node
-	}
-	else if(!node.nodes.length) { // node with no children
-		if(this.callbacks.noChildren === null) // no user callback for onNoChildren() event
-			alert('This node has no child nodes to be expanded.');
-		else
-			this.callbacks.noChildren(this._buildReturnNodeObj(node)); // invoke user callback, pass node
-	}
-	else { // node has children
-		node.isExpanded = !node.isExpanded;
-		if(!node.isExpanded)
-			for(var i = 0; i < node.nodes.length; ++i)
-				this._removeDiv(node.nodes[i]); // remove children if collapsed
-		this._storeCurrentTree();
-		this.redraw();
-	}
+	var Placement = {
+		Calc: function(visibleMatrix) {
+			Placement.PreliminarPos(visibleMatrix);
+			Placement.AdjustInternalNodes(visibleMatrix);
+			Placement.IncreaseBranchGap(visibleMatrix[0][0]);
+			Placement.AdjustHorizontally(visibleMatrix);
+			return visibleMatrix;
+		},
+
+		PreliminarPos: function(visibleMatrix) {
+			for(var i = 0; i < visibleMatrix.length; ++i) {
+				var yAccum = 0;
+				for(var j = 0; j < visibleMatrix[i].length; ++j) {
+					var node = visibleMatrix[i][j];
+					node.posSch = { // schedule new positioning
+						x:i * 80, // arbitrary
+						y:yAccum + CONSTANTS.yNodePadding
+					};
+					yAccum += node.rect.cy + CONSTANTS.yNodePadding * 2;
+				}
+			}
+		},
+
+		AdjustInternalNodes: function(visibleMatrix) {
+			for(var iDep = visibleMatrix.length - 2; iDep >= 0; --iDep) { // bypass deepmost level
+				var siblings = visibleMatrix[iDep]; // nodes of column iDep
+				var iLastParent = -1;
+				for(var iSib = 0; iSib < siblings.length; ++iSib) { // each node of column
+					if(siblings[iSib].children.length > 0 && siblings[iSib].isExpanded) { // parent, not internal leaf
+						Placement.AlignToChildren(siblings[iSib]);
+						if(iLastParent == -1) { // we're 1st parent of this column
+							var yAccum = siblings[iSib].posSch.y - CONSTANTS.yNodePadding;
+							for(var i = iSib - 1; i >= 0; --i) { // leaf nodes above 1st parent
+								yAccum -= siblings[i].rect.cy + 2 * CONSTANTS.yNodePadding;
+								siblings[i].posSch.y = CONSTANTS.yNodePadding + yAccum;
+							}
+						} else if(iLastParent > -1) { // parent node, but not 1st; fail-safe when root
+							var yTop = siblings[iLastParent].posSch.y +
+								siblings[iLastParent].rect.cy +
+								CONSTANTS.yNodePadding;
+							var yBot = siblings[iSib].posSch.y - CONSTANTS.yNodePadding;
+							var yMinRoom = 0;
+							for(var i = iLastParent + 1; i < iSib; ++i)
+								yMinRoom += siblings[i].rect.cy + 2 * CONSTANTS.yNodePadding;
+							if(yMinRoom > yBot - yTop)
+								for(var i = iSib; i < siblings.length; ++i) // everyone beyond moves down
+									Placement.MoveNodesDown(siblings[i], yMinRoom - (yBot - yTop));
+							for(var i = iLastParent + 1; i < iSib; ++i) { // internal leaves
+								var yPercent = (siblings[i].rect.cy + 2 * CONSTANTS.yNodePadding) / yMinRoom;
+								siblings[i].posSch.y = Math.round(
+									yTop +
+									yPercent * Math.max(yMinRoom, yBot - yTop) / 2 -
+									siblings[i].rect.cy / 2);
+								yTop += yPercent * Math.max(yMinRoom, yBot - yTop);
+							}
+						}
+						iLastParent = iSib; // we're last parent now
+					}
+				}
+				if(iLastParent > -1) { // fail-safe when root
+					var yAccum = siblings[iLastParent].posSch.y +
+						siblings[iLastParent].rect.cy +
+						CONSTANTS.yNodePadding;
+					for(var i = iLastParent + 1; i < siblings.length; ++i) { // leaf nodes beyond bottom parent
+						siblings[i].posSch.y = yAccum + CONSTANTS.yNodePadding;
+						yAccum += siblings[i].rect.cy + 2 * CONSTANTS.yNodePadding;
+					}
+				}
+			}
+		},
+
+		IncreaseBranchGap: function IncreaseBranchGap(node) {
+			if(!node.isExpanded) return 0;
+			var yMoved = 0; // how many pixels the node has moved down
+			var firstParent = true;
+			for(var i = 0; i < node.children.length; ++i) {
+				var child = node.children[i];
+				if(child.children.length && child.isExpanded) { // parent, not leaf
+					if(firstParent) {
+						firstParent = false; // skip 1st parent
+					} else {
+						for(var n = i; n < node.children.length; ++n)
+							Placement.MoveNodesDown(node.children[n], CONSTANTS.yBranchGap); // move down us and beyond
+						yMoved += CONSTANTS.yBranchGap;
+					}
+					var yInc = IncreaseBranchGap(child);
+					for(var n = i + 1; n < node.children.length; ++n)
+						Placement.MoveNodesDown(node.children[n], yInc); // move down again, everyone beyond
+					yMoved += yInc;
+				}
+			}
+			Placement.AlignToChildren(node);
+			return yMoved;
+		},
+
+		AdjustHorizontally: function(visibleMatrix) {
+			for(var iDep = 1; iDep < visibleMatrix.length; ++iDep) {
+				var ourNodes = visibleMatrix[iDep];
+				if(!ourNodes.length) break;
+				var off = 0;
+				var prevNodes = visibleMatrix[iDep - 1];
+				for(var i = 0; i < prevNodes.length; ++i) {
+					if(off < prevNodes[i].posSch.x + prevNodes[i].rect.cx + CONSTANTS.xMinPadding)
+						off = prevNodes[i].posSch.x + prevNodes[i].rect.cx + CONSTANTS.xMinPadding;
+				}
+				for(var i = 0; i < ourNodes.length; ++i)
+					ourNodes[i].posSch.x = off;
+			}
+		},
+
+		AlignToChildren: function(node) {
+			if(node.children.length === 0 || !node.isExpanded) return;
+			var yTop = node.children[0].posSch.y - CONSTANTS.yNodePadding;
+			var yBot = node.children[node.children.length - 1].posSch.y +
+				node.children[node.children.length - 1].rect.cy +
+				CONSTANTS.yNodePadding;
+			node.posSch.y = Math.round(yTop + (yBot - yTop) / 2 - node.rect.cy / 2);
+		},
+
+		MoveNodesDown: function MoveNodesDown(node, inc) {
+			node.posSch.y += inc;
+			if(node.isExpanded)
+				for(var i = 0; i < node.children.length; ++i)
+					MoveNodesDown(node.children[i], inc);
+		},
+
+		ResetRootPos: function(visibleMatrix) {
+			var difx = visibleMatrix[0][0].posSch.x;
+			var dify = visibleMatrix[0][0].posSch.y -
+				Math.round(Us.context.canvas.height / 2 - visibleMatrix[0][0].rect.cy / 2);
+			for(var i = 0; i < visibleMatrix.length; ++i) {
+				for(var j = 0; j < visibleMatrix[i].length; ++j) {
+					visibleMatrix[i][j].posSch.x -= difx + Us.base.x;
+					visibleMatrix[i][j].posSch.y -= dify + Us.base.y;
+				}
+			}
+			return visibleMatrix;
+		}
+	};
+
+	var Events = {
+		MouseDown: function(ev) {
+			if(Us.isRendering) return;
+			Us.baseDragPos = { x:ev.pageX - Us.context.canvas.offsetLeft,
+				y:ev.pageY - Us.context.canvas.offsetTop }; // we're ready to drag now
+			Us.context.canvas.style.cursor = 'move';
+			ev.preventDefault();
+		},
+
+		MouseUp: function(ev) {
+			if(Us.baseDragPos !== null) { // if we're dragging
+				window.setTimeout(function() { // little delay so click event won't get it
+					Us.baseDragPos = null;
+					Us.isDragging = false;
+				}, 40); // not dragging anymore
+				var canvas = Us.context.canvas;
+				canvas.style.cursor =
+					Node.AtPoint(ev.pageX - canvas.offsetLeft, ev.pageY - canvas.offsetTop,
+						Node.VisibleMatrix()) === null ? 'auto' : 'pointer';
+				ev.preventDefault();
+			}
+		},
+
+		MouseOut: function() {
+			if(Us.baseDragPos !== null) {
+				Us.baseDragPos = null;
+				Us.isDragging = false;
+				Us.context.canvas.style.cursor = 'auto';
+			}
+		},
+
+		MouseMove: function MouseMove(ev) {
+			if(Us.isRendering) return;
+			var pos = { x:ev.pageX - Us.context.canvas.offsetLeft,
+				y:ev.pageY - Us.context.canvas.offsetTop };
+			var matrix = Node.VisibleMatrix();
+			if(Us.baseDragPos === null) { // we're not dragging
+				function SameNode(node1, node2) { // are the two nodes the same one?
+					if(node1 === null && node2 === null) return true;
+					if(node1 !== null || node2 !== null) return false;
+					return node1.id === node2.id;
+				}
+				if(MouseMove.prev === undefined)
+					MouseMove.prev = null; // static variable to hold previous hovered
+				var target = Node.AtPoint(pos.x, pos.y, matrix);
+				if(!SameNode(target, MouseMove.prev)) {
+					MouseMove.prev = target;
+					Us.context.canvas.style.cursor = (target !== null) ? 'pointer' : 'auto';
+				}
+			} else { // we're dragging
+				Us.isDragging = true; // will abort click event after mouseup
+				Us.base.x += pos.x - Us.baseDragPos.x; // change translation coordinates
+				Us.base.y += pos.y - Us.baseDragPos.y;
+				Us.baseDragPos = { x:pos.x, y:pos.y };
+				Node.Paint(matrix, 1);
+			}
+			ev.preventDefault();
+		},
+
+		Click: function(ev) {
+			if(Us.isRendering || Us.isDragging) return;
+			var matrix = Node.VisibleMatrix(),
+				cursorPt = { x:ev.pageX - Us.context.canvas.offsetLeft, y:ev.pageY - Us.context.canvas.offsetTop },
+				target = Node.AtPoint(cursorPt.x, cursorPt.y, matrix); // null if none
+			if(target === null) return;
+			if(ev.ctrlKey) { // Ctrl+click
+				if(Us.callbacks.CtrlClick !== null)
+					Us.callbacks.CtrlClick.call(Us.retObj, target, ev); // pass clicked node and event as arguments
+			} else { // non-Ctrl click
+				if(target.children.length > 0) { // clicked node has children
+					function SetChildrenPos(node, pos, posSch) {
+						for(var i = 0; i < node.children.length; ++i) {
+							if(pos !== null) { // set current position
+								node.children[i].rect.x = pos.x;
+								node.children[i].rect.y = pos.y;
+							}
+							if(posSch !== undefined && posSch !== null) // set scheduled position
+								node.children[i].posSch = { x:posSch.x, y:posSch.y };
+							SetChildrenPos(node.children[i], pos, posSch);
+						}
+					}
+					function CenterNodeAtPoint(x, y, node, visibleMatrix) {
+						x -= Us.base.x; // translate coordinates
+						y -= Us.base.y;
+						var off = {
+							x: x - (node.posSch !== null ? node.posSch.x : node.rect.x) - (x - node.rect.x),
+							y: y - (node.posSch !== null ? node.posSch.y : node.rect.y) - (y - node.rect.y)
+						};
+						for(var i = 0; i < visibleMatrix.length; ++i) {
+							for(var j = 0; j < visibleMatrix[i].length; ++j) {
+								var cur = visibleMatrix[i][j];
+								if(cur.posSch !== null) { // set scheduled position
+									cur.posSch.x += off.x;
+									cur.posSch.y += off.y;
+								} else { // set current (static) position
+									cur.rect.x += off.x;
+									cur.rect.y += off.y;
+								}
+							}
+						}
+						return visibleMatrix;
+					}
+					if(!target.isExpanded) { // node will be expanded
+						target.isExpanded = true;
+						SetChildrenPos(target, target.rect, null);
+						matrix = Node.VisibleMatrix();
+						Placement.Calc(matrix);
+						CenterNodeAtPoint(cursorPt.x, cursorPt.y, target, matrix);
+						Node.Render(matrix);
+						if(Us.callbacks.Click !== null)
+							Us.callbacks.Click.call(Us.retObj, target, ev);
+					} else { // node will be collapsed
+						target.isExpanded = false;
+						matrix = Placement.Calc(Node.VisibleMatrix()); // will calc final pos of clicked node (and above) only
+						target.isExpanded = true;
+						SetChildrenPos(target, null, target.posSch);
+						matrix = Node.VisibleMatrix();
+						CenterNodeAtPoint(cursorPt.x, cursorPt.y, target, matrix);
+						Node.Render(matrix, function() {
+							target.isExpanded = false;
+							matrix = Node.VisibleMatrix();
+							Placement.Calc(matrix);
+							CenterNodeAtPoint(cursorPt.x, cursorPt.y, target, matrix);
+							Node.Render(matrix); // no animation, remove collapsed
+							if(Us.callbacks.Click !== null)
+								Us.callbacks.Click.call(Us.retObj, target, ev);
+						});
+					}
+				} else { // clicked node has no children
+					if(Us.callbacks.Click !== null)
+						Us.callbacks.Click.call(Us.retObj, target, ev);
+				}
+			}
+		},
+
+		SelectStart: function(ev) {
+			ev.preventDefault();
+		}
+	};
+
+	return Util.AddPropertiesIfNotExist(Us.retObj, {
+		click: function(Callback) { Us.callbacks.Click = Callback; return Us.retObj; },
+		ctrlClick: function(Callback) { Us.callbacks.CtrlClick = Callback; return Us.retObj; },
+		load: function(rootNode) { Node.Load(rootNode); return Us.retObj; },
+		collapseAll: function() { Node.CollapseAll(); return Us.retObj; },
+		expandAll: function() { Node.ExpandAll(); return Us.retObj; }
+	});
 }
