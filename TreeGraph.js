@@ -8,7 +8,7 @@
  * Released under the MIT license, see license.txt for details.
  */
 
-function TreeGraph(divId) {
+function TreeGraph(canvasId) {
 	var CONSTANTS = {
 		xBoxPadding: 4,
 		yNodePadding: 5,
@@ -16,7 +16,7 @@ function TreeGraph(divId) {
 		yBranchGap: 10,
 		xBezierRadius: 14,
 		imgSize: 22, // if not null, will force size for all images
-		font: '11pt "Times New Roman"',
+		font: '10pt Arial',
 		color: 'rgba(255,255,255,0.5)', // default for nodes without color
 		borderColor: '#888',
 		lineColor: '#AAA',
@@ -25,13 +25,12 @@ function TreeGraph(divId) {
 
 	var Us = {
 		retObj: { }, // object to be returned to TreeGraph() function caller
-		context: document.getElementById(divId).getContext('2d'),
+		context: document.getElementById(canvasId).getContext('2d'),
 		rootNode: null,
 		callbacks: { Click:null, CtrlClick:null },
 		isRendering: false,
 		isDragging: false,
-		baseDragPos: null, // when dragging, this is set
-		base: { x:0, y:0 } // current translation, set by dragging
+		baseDragPos: null // when dragging, this is set
 	};
 
 	var Util = {
@@ -212,9 +211,17 @@ function TreeGraph(divId) {
 			return matrix;
 		},
 
+		Count: function() {
+			function CountChildren(node) {
+				var c = 1;
+				for(var i = 0; i < node.children.length; ++i)
+					c += CountChildren(node.children[i]);
+				return c;
+			}
+			return CountChildren(Us.rootNode) + 1;
+		},
+
 		AtPoint: function(x, y, visibleMatrix) {
-			x -= Us.base.x; // translate coordinates
-			y -= Us.base.y;
 			for(var i = 0; i < visibleMatrix.length; ++i) {
 				for(var j = 0; j < visibleMatrix[i].length; ++j) {
 					var node = visibleMatrix[i][j];
@@ -276,37 +283,37 @@ function TreeGraph(divId) {
 					var parent = node.parent();
 					if(parent !== null) {
 						Util.DrawBezier(Us.context, // apply coordinate translation
-							parent.posTmp.x + parent.rect.cx + Us.base.x,
-							parent.posTmp.y + parent.rect.cy / 2 + Us.base.y,
-							node.posTmp.x + Us.base.x,
-							node.posTmp.y + node.rect.cy / 2 + Us.base.y);
+							parent.posTmp.x + parent.rect.cx,
+							parent.posTmp.y + parent.rect.cy / 2,
+							node.posTmp.x,
+							node.posTmp.y + node.rect.cy / 2);
 					}
 					if(node.children.length > 0 && !node.isExpanded) {
 						Util.DrawHalfCircle(Us.context,
-							node.posTmp.x + node.rect.cx + 1  + Us.base.x,
-							node.posTmp.y + node.rect.cy / 2  + Us.base.y + 1);
+							node.posTmp.x + node.rect.cx + 1,
+							node.posTmp.y + node.rect.cy / 2 + 1);
 					}
 					Us.context.restore();
 					Util.DrawRect(Us.context,
-						node.posTmp.x + Us.base.x, node.posTmp.y + Us.base.y,
+						node.posTmp.x, node.posTmp.y,
 						node.rect.cx, node.rect.cy,
 						CONSTANTS.borderColor, node.color);
 					if(node.imageObj !== null) {
 						if(CONSTANTS.imgSize !== null) { // force image size
 							Us.context.drawImage(node.imageObj,
-								node.posTmp.x + Us.base.x + 1, node.posTmp.y + Us.base.y + 1,
+								node.posTmp.x + 1, node.posTmp.y + 1,
 								CONSTANTS.imgSize, CONSTANTS.imgSize);
 						} else {
 							Us.context.drawImage(node.imageObj,
-								node.posTmp.x + Us.base.x + 1, node.posTmp.y + Us.base.y + 1);
+								node.posTmp.x + 1, node.posTmp.y + 1);
 						}
 					}
 					Us.context.fillText(node.text,
-						node.posTmp.x + CONSTANTS.xBoxPadding + Us.base.x +
+						node.posTmp.x + CONSTANTS.xBoxPadding +
 							(node.imageObj !== null ?
 								(CONSTANTS.imgSize !== null ? CONSTANTS.imgSize : node.imageObj.width) + 1
 							: 0),
-						node.posTmp.y + node.rect.cy / 2 + Us.base.y);
+						node.posTmp.y + node.rect.cy / 2);
 				}
 			}
 			Us.context.restore();
@@ -480,8 +487,8 @@ function TreeGraph(divId) {
 				Math.round(Us.context.canvas.height / 2 - visibleMatrix[0][0].rect.cy / 2);
 			for(var i = 0; i < visibleMatrix.length; ++i) {
 				for(var j = 0; j < visibleMatrix[i].length; ++j) {
-					visibleMatrix[i][j].posSch.x -= difx + Us.base.x;
-					visibleMatrix[i][j].posSch.y -= dify + Us.base.y;
+					visibleMatrix[i][j].posSch.x -= difx;
+					visibleMatrix[i][j].posSch.y -= dify;
 				}
 			}
 			return visibleMatrix;
@@ -539,10 +546,14 @@ function TreeGraph(divId) {
 				}
 			} else { // we're dragging
 				Us.isDragging = true; // will abort click event after mouseup
-				Us.base.x += pos.x - Us.baseDragPos.x; // change translation coordinates
-				Us.base.y += pos.y - Us.baseDragPos.y;
+				for(var i = 0; i < matrix.length; ++i) { // apply coordinates to all visible nodes
+					for(var j = 0; j < matrix[i].length; ++j) {
+						matrix[i][j].rect.x += pos.x - Us.baseDragPos.x;
+						matrix[i][j].rect.y += pos.y - Us.baseDragPos.y;
+					}
+				}
 				Us.baseDragPos = { x:pos.x, y:pos.y };
-				Node.Paint(matrix, 1);
+				Node.Paint(matrix, 1); // no animation
 			}
 			ev.preventDefault();
 		},
@@ -570,8 +581,6 @@ function TreeGraph(divId) {
 						}
 					}
 					function CenterNodeAtPoint(x, y, node, visibleMatrix) {
-						x -= Us.base.x; // translate coordinates
-						y -= Us.base.y;
 						var off = {
 							x: x - (node.posSch !== null ? node.posSch.x : node.rect.x) - (x - node.rect.x),
 							y: y - (node.posSch !== null ? node.posSch.y : node.rect.y) - (y - node.rect.y)
@@ -633,6 +642,7 @@ function TreeGraph(divId) {
 		ctrlClick: function(Callback) { Us.callbacks.CtrlClick = Callback; return Us.retObj; },
 		load: function(rootNode) { Node.Load(rootNode); return Us.retObj; },
 		collapseAll: function() { Node.CollapseAll(); return Us.retObj; },
-		expandAll: function() { Node.ExpandAll(); return Us.retObj; }
+		expandAll: function() { Node.ExpandAll(); return Us.retObj; },
+		countNodes: function() { return Node.Count(); }
 	});
 }
