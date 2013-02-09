@@ -35,12 +35,20 @@ function TreeGraph(canvasId) {
 
 	var Util = {
 		AddPropertiesIfNotExist: function AddPropertiesIfNotExist(target, otherObj) {
-			target = target || { }; // http://stackoverflow.com/questions/12317003/something-like-jquery-extend-but-standalone
-			for(var prop in otherObj) {
+			if(target === undefined) target = { };
+			for(var prop in otherObj) { // http://stackoverflow.com/questions/12317003/something-like-jquery-extend-but-standalone
 				if(target[prop] === undefined) {
-					target[prop] = (otherObj[prop] !== null && typeof otherObj[prop] === 'object') ?
-						AddPropertiesIfNotExist(target[prop], otherObj[prop]) :
-						otherObj[prop];
+					if(otherObj[prop] !== null && typeof otherObj[prop] === 'object') {
+						if(otherObj[prop] instanceof Array) {
+							target[prop] = [];
+							for(var i = 0; i < otherObj[prop].length; ++i)
+								target[prop].push(AddPropertiesIfNotExist({ }, otherObj[prop]));
+						} else {
+							AddPropertiesIfNotExist(target[prop], otherObj[prop]);
+						}
+					} else {
+						target[prop] = otherObj[prop];
+					}
 				}
 			}
 			return target;
