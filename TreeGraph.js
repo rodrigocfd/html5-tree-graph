@@ -20,7 +20,8 @@ function TreeGraph(canvasId) {
 		color: 'rgba(255,255,255,0.5)', // default for nodes without color
 		borderColor: '#888',
 		lineColor: '#AAA',
-		animateTime: 100
+		animateTime: 100,
+		storageKey: 'TreeGraph_' + canvasId
 	};
 
 	var Us = {
@@ -39,7 +40,7 @@ function TreeGraph(canvasId) {
 			for(var prop in otherObj) { // http://stackoverflow.com/questions/12317003/something-like-jquery-extend-but-standalone
 				if(target[prop] === undefined) {
 					if(otherObj[prop] !== null && typeof otherObj[prop] === 'object') {
-						if(otherObj[prop] instanceof Array) {
+						if(otherObj[prop] instanceof Array) { // http://javascript.crockford.com/remedial.html
 							target[prop] = [];
 							for(var i = 0; i < otherObj[prop].length; ++i)
 								target[prop].push(AddPropertiesIfNotExist({ }, otherObj[prop]));
@@ -121,21 +122,77 @@ function TreeGraph(canvasId) {
 	};
 
 	var Node = {
+		FlushToStorage: function() {
+			function StripNode(node) {
+				var ret = {
+					text: node.text,
+					isExpanded: node.isExpanded,
+					pos: { x:node.rect.x, y:node.rect.y }, // current node position
+					children: []
+				};
+				for(var i = 0; i < node.children.length; ++i)
+					ret.children.push(StripNode(node.children[i]));
+				return ret;
+			}
+			localStorage.setItem(CONSTANTS.storageKey,
+				JSON.stringify( StripNode(Us.rootNode) ));
+		},
+
+		CheckStorage: function() {
+			var oldTree = null;
+			if(localStorage.getItem(CONSTANTS.storageKey) !== null) { // we previously stored this tree
+				function IsSameTree(root1, root2) {
+					if(root1.text !== root2.text || root1.children.length !== root2.children.length) {
+						return false;
+					} else {
+						for(var i = 0; i < root1.children.length; ++i)
+							if(!IsSameTree(root1.children[i], root2.children[i]))
+								return false;
+					}
+					return true;
+				}
+				oldTree = JSON.parse(localStorage.getItem(CONSTANTS.storageKey));
+				if(IsSameTree(Us.rootNode, oldTree)) { // we're reloading the tree, so copy the node folding
+					function CopyNodeFolding(destNode, srcNode) {
+						destNode.isExpanded = srcNode.isExpanded;
+						for(var i = 0; i < destNode.children.length; ++i) // supposedly the same tree
+							CopyNodeFolding(destNode.children[i], srcNode.children[i]);
+					}
+					CopyNodeFolding(Us.rootNode, oldTree);
+				} else { // tree structure has changed
+					Node.FlushToStorage();
+				}
+			} else { // this tree never have been stored
+				Node.FlushToStorage();
+			}
+			return oldTree;
+		},
+
 		Load: function(rootNode) {
 			Us.context.font = CONSTANTS.font;
 			Us.rootNode = rootNode;
 			Node.Init();
+			var oldTree = Node.CheckStorage();
 			Node.LoadImages(function() {
 				var matrix = Node.VisibleMatrix(); // first positioning
 				Placement.Calc(matrix);
-				Placement.ResetRootPos(matrix);
+				if(oldTree !== null) { // this is tree is being reloaded
+					function SetPosFromOldNode(destNode, srcNode) {
+						destNode.posSch = { x:srcNode.pos.x, y:srcNode.pos.y }; // schedule
+						for(var i = 0; i < destNode.children.length; ++i) // supposedly the same tree
+							SetPosFromOldNode(destNode.children[i], srcNode.children[i]);
+					}
+					SetPosFromOldNode(Us.rootNode, oldTree);
+				} else { // this tree has never been stored
+					Placement.ResetRootPos(matrix);
+				}
 				Node.Render(matrix);
 				var events = [ 'mousedown', 'mouseup', 'mouseout', 'mousemove', 'click', 'selectstart' ];
-				var funcs = [ Events.MouseDown, Events.MouseUp, Events.MouseOut,
+				var handlers = [ Events.MouseDown, Events.MouseUp, Events.MouseOut,
 					Events.MouseMove, Events.Click, Events.SelectStart ];
 				for(var i = 0; i < events.length; ++i) {
-					Us.context.canvas.removeEventListener(events[i], funcs[i]);
-					Us.context.canvas.addEventListener(events[i], funcs[i]);
+					Us.context.canvas.removeEventListener(events[i], handlers[i]);
+					Us.context.canvas.addEventListener(events[i], handlers[i]);
 				}
 			});
 		},
@@ -144,11 +201,11 @@ function TreeGraph(canvasId) {
 			if(Init.seq === undefined)
 				Init.seq = 0; // static variable to hold the unique ID
 			function SetupNode(node, depth, parent) {
-				Util.AddPropertiesIfNotExist(node, { // user properties for a node
+				Util.AddPropertiesIfNotExist(node, { // these are the properties available to the user
 					text: '(NO TEXT)',
 					children: [],
 					color: CONSTANTS.color,
-					image: null, // full URL
+					image: null, // URL
 					data: null // any user data, will be preserved when returning the node at events
 				});
 				node.id = Init.seq++;
@@ -167,7 +224,7 @@ function TreeGraph(canvasId) {
 		},
 
 		LoadImages: function(OnComplete) {
-			var total = 0;
+			var total = 0; // how many images in the whole tree
 			function CountImages(node) {
 				total += (node.image === null) ? 0 : 1;
 				for(var i = 0; i < node.children.length; ++i)
@@ -175,7 +232,7 @@ function TreeGraph(canvasId) {
 			}
 			function CreateImageObj(node) {
 				function ImageDone(status) {
-					if(status.type === 'error')
+					if(status.type === 'error') // won't affect the rendering, image just won't show
 						console.log('Failed to load ' + status.target.src + '".');
 					if(--total === 0 && OnComplete !== undefined)
 						OnComplete();
@@ -198,10 +255,10 @@ function TreeGraph(canvasId) {
 					CreateImageObj(node.children[i]);
 			}
 			CountImages(Us.rootNode);
-			if(total === 0) {
+			if(total === 0) { // no images to render
 				if(OnComplete !== undefined) OnComplete();
 			} else {
-				CreateImageObj(Us.rootNode);
+				CreateImageObj(Us.rootNode); // preload all images
 			}
 		},
 
@@ -226,7 +283,7 @@ function TreeGraph(canvasId) {
 					c += CountChildren(node.children[i]);
 				return c;
 			}
-			return CountChildren(Us.rootNode) + 1;
+			return CountChildren(Us.rootNode) + 1; // whole tree node count
 		},
 
 		AtPoint: function(x, y, visibleMatrix) {
@@ -255,7 +312,9 @@ function TreeGraph(canvasId) {
 				matrix = Node.VisibleMatrix();
 				Placement.Calc(matrix);
 				Placement.ResetRootPos(matrix);
-				Node.Render(matrix); // no animation, remove collapsed
+				Node.Render(matrix, function() { // no animation, remove collapsed
+					Node.FlushToStorage();
+				});
 			});
 		},
 
@@ -271,7 +330,7 @@ function TreeGraph(canvasId) {
 			var matrix = Node.VisibleMatrix(); // will have all the nodes
 			Placement.Calc(matrix);
 			Placement.ResetRootPos(matrix);
-			Node.Render(matrix);
+			Node.Render(matrix, function() { Node.FlushToStorage(); });
 		},
 
 		Paint: function(visibleMatrix, pct) {
@@ -356,7 +415,7 @@ function TreeGraph(canvasId) {
 					if(OnComplete !== undefined) OnComplete();
 				});
 			} else {
-				Node.Paint(visibleMatrix, 1);
+				Node.Paint(visibleMatrix, 1); // no animation
 				Us.isRendering = false;
 				if(OnComplete !== undefined) OnComplete();
 			}
@@ -495,7 +554,7 @@ function TreeGraph(canvasId) {
 				Math.round(Us.context.canvas.height / 2 - visibleMatrix[0][0].rect.cy / 2);
 			for(var i = 0; i < visibleMatrix.length; ++i) {
 				for(var j = 0; j < visibleMatrix[i].length; ++j) {
-					visibleMatrix[i][j].posSch.x -= difx;
+					visibleMatrix[i][j].posSch.x -= difx; // schedule
 					visibleMatrix[i][j].posSch.y -= dify;
 				}
 			}
@@ -517,6 +576,7 @@ function TreeGraph(canvasId) {
 				window.setTimeout(function() { // little delay so click event won't get it
 					Us.baseDragPos = null;
 					Us.isDragging = false;
+					Node.FlushToStorage();
 				}, 40); // not dragging anymore
 				var canvas = Us.context.canvas;
 				canvas.style.cursor =
@@ -530,6 +590,7 @@ function TreeGraph(canvasId) {
 			if(Us.baseDragPos !== null) {
 				Us.baseDragPos = null;
 				Us.isDragging = false;
+				Node.FlushToStorage();
 				Us.context.canvas.style.cursor = 'auto';
 			}
 		},
@@ -613,9 +674,11 @@ function TreeGraph(canvasId) {
 						matrix = Node.VisibleMatrix();
 						Placement.Calc(matrix);
 						CenterNodeAtPoint(cursorPt.x, cursorPt.y, target, matrix);
-						Node.Render(matrix);
-						if(Us.callbacks.Click !== null)
-							Us.callbacks.Click.call(Us.retObj, target, ev);
+						Node.Render(matrix, function() {
+							Node.FlushToStorage();
+							if(Us.callbacks.Click !== null)
+								Us.callbacks.Click.call(Us.retObj, target, ev);
+						});
 					} else { // node will be collapsed
 						target.isExpanded = false;
 						matrix = Placement.Calc(Node.VisibleMatrix()); // will calc final pos of clicked node (and above) only
@@ -628,9 +691,11 @@ function TreeGraph(canvasId) {
 							matrix = Node.VisibleMatrix();
 							Placement.Calc(matrix);
 							CenterNodeAtPoint(cursorPt.x, cursorPt.y, target, matrix);
-							Node.Render(matrix); // no animation, remove collapsed
-							if(Us.callbacks.Click !== null)
-								Us.callbacks.Click.call(Us.retObj, target, ev);
+							Node.Render(matrix, function() { // no animation, remove collapsed
+								Node.FlushToStorage();
+								if(Us.callbacks.Click !== null)
+									Us.callbacks.Click.call(Us.retObj, target, ev);
+							});
 						});
 					}
 				} else { // clicked node has no children
