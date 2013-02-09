@@ -16,7 +16,7 @@ function TreeGraph(canvasId) {
 		yBranchGap: 10,
 		xBezierRadius: 14,
 		imgSize: 22, // if not null, will force size for all images
-		font: '10pt Arial',
+		font: '11pt "Times New Roman"',
 		color: 'rgba(255,255,255,0.5)', // default for nodes without color
 		borderColor: '#888',
 		lineColor: '#AAA',
@@ -482,7 +482,7 @@ function TreeGraph(canvasId) {
 		},
 
 		ResetRootPos: function(visibleMatrix) {
-			var difx = visibleMatrix[0][0].posSch.x;
+			var difx = visibleMatrix[0][0].posSch.x - Math.round(Us.context.canvas.width / 10);
 			var dify = visibleMatrix[0][0].posSch.y -
 				Math.round(Us.context.canvas.height / 2 - visibleMatrix[0][0].rect.cy / 2);
 			for(var i = 0; i < visibleMatrix.length; ++i) {
@@ -643,6 +643,7 @@ function TreeGraph(canvasId) {
 		load: function(rootNode) { Node.Load(rootNode); return Us.retObj; },
 		collapseAll: function() { Node.CollapseAll(); return Us.retObj; },
 		expandAll: function() { Node.ExpandAll(); return Us.retObj; },
-		countNodes: function() { return Node.Count(); }
+		countNodes: function() { return Node.Count(); },
+		redraw: function() { Node.Render(Node.VisibleMatrix()); return Us.retObj; }
 	});
 }
