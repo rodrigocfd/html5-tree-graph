@@ -142,7 +142,9 @@ function TreeGraph(canvasId) {
 			var oldTree = null;
 			if(localStorage.getItem(CONSTANTS.storageKey) !== null) { // we previously stored this tree
 				function IsSameTree(root1, root2) {
-					if(root1.text !== root2.text || root1.children.length !== root2.children.length) {
+					if(root1 === null || root2 === null) {
+						return false;
+					} else if(root1.text !== root2.text || root1.children.length !== root2.children.length) {
 						return false;
 					} else {
 						for(var i = 0; i < root1.children.length; ++i)
@@ -160,6 +162,7 @@ function TreeGraph(canvasId) {
 					}
 					CopyNodeFolding(Us.rootNode, oldTree);
 				} else { // tree structure has changed
+					oldTree = null;
 					Node.FlushToStorage();
 				}
 			} else { // this tree never have been stored
@@ -169,6 +172,7 @@ function TreeGraph(canvasId) {
 		},
 
 		Load: function(rootNode) {
+			Us.context.save();
 			Us.context.font = CONSTANTS.font;
 			Us.rootNode = rootNode;
 			Node.Init();
@@ -176,7 +180,7 @@ function TreeGraph(canvasId) {
 			Node.LoadImages(function() {
 				var matrix = Node.VisibleMatrix(); // first positioning
 				Placement.Calc(matrix);
-				if(oldTree !== null) { // this is tree is being reloaded
+				if(oldTree !== null) { // this tree is being reloaded
 					function SetPosFromOldNode(destNode, srcNode) {
 						destNode.posSch = { x:srcNode.pos.x, y:srcNode.pos.y }; // schedule
 						for(var i = 0; i < destNode.children.length; ++i) // supposedly the same tree
@@ -194,6 +198,7 @@ function TreeGraph(canvasId) {
 					Us.context.canvas.removeEventListener(events[i], handlers[i]);
 					Us.context.canvas.addEventListener(events[i], handlers[i]);
 				}
+				Us.context.restore();
 			});
 		},
 
@@ -336,6 +341,7 @@ function TreeGraph(canvasId) {
 		Paint: function(visibleMatrix, pct) {
 			Us.context.save();
 			Us.context.clearRect(0, 0, Us.context.canvas.width, Us.context.canvas.height);
+			Us.context.font = CONSTANTS.font;
 			Us.context.textBaseline = 'middle';
 			for(var i = 0; i < visibleMatrix.length; ++i) {
 				for(var j = 0; j < visibleMatrix[i].length; ++j) {
