@@ -288,7 +288,7 @@ function TreeGraph(canvasId) {
 					c += CountChildren(node.children[i]);
 				return c;
 			}
-			return CountChildren(Us.rootNode) + 1; // whole tree node count
+			return CountChildren(Us.rootNode); // whole tree node count
 		},
 
 		AtPoint: function(x, y, visibleMatrix) {
