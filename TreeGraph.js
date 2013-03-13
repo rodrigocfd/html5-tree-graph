@@ -55,6 +55,21 @@ function TreeGraph(canvasId) {
 			return target;
 		},
 
+		GetPos: function(obj) {
+			// http://www.codingforums.com/showthread.php?t=126325
+			var ret = { x:obj.offsetLeft, y:obj.offsetTop };
+			while(obj.offsetParent) {
+				if(obj === document.getElementsByTagName('body')[0]) {
+					break;
+				} else {
+					ret.x += obj.offsetParent.offsetLeft;
+					ret.y += obj.offsetParent.offsetTop;
+					obj = obj.offsetParent;
+				}
+			}
+			return ret;
+		},
+
 		CalcTextRect: function CalcTextRect(context, text) {
 			if(CalcTextRect.cache === undefined)
 				CalcTextRect.cache = []; // static variable to cache the calculated heights
@@ -571,8 +586,9 @@ function TreeGraph(canvasId) {
 	var Events = {
 		MouseDown: function(ev) {
 			if(Us.isRendering) return;
-			Us.baseDragPos = { x:ev.pageX - Us.context.canvas.offsetLeft,
-				y:ev.pageY - Us.context.canvas.offsetTop }; // we're ready to drag now
+			var canvasxy = Util.GetPos(Us.context.canvas);
+			Us.baseDragPos = { x:ev.pageX - canvasxy.x,
+				y:ev.pageY - canvasxy.y }; // we're ready to drag now
 			Us.context.canvas.style.cursor = 'move';
 			ev.preventDefault();
 		},
@@ -584,9 +600,9 @@ function TreeGraph(canvasId) {
 					Us.isDragging = false;
 					Node.FlushToStorage();
 				}, 40); // not dragging anymore
-				var canvas = Us.context.canvas;
-				canvas.style.cursor =
-					Node.AtPoint(ev.pageX - canvas.offsetLeft, ev.pageY - canvas.offsetTop,
+				var canvasxy = Util.GetPos(Us.context.canvas);
+				Us.context.canvas.style.cursor =
+					Node.AtPoint(ev.pageX - canvasxy.x, ev.pageY - canvasxy.y,
 						Node.VisibleMatrix()) === null ? 'auto' : 'pointer';
 				ev.preventDefault();
 			}
@@ -603,8 +619,9 @@ function TreeGraph(canvasId) {
 
 		MouseMove: function MouseMove(ev) {
 			if(Us.isRendering) return;
-			var pos = { x:ev.pageX - Us.context.canvas.offsetLeft,
-				y:ev.pageY - Us.context.canvas.offsetTop };
+			var canvasxy = Util.GetPos(Us.context.canvas);
+			var pos = { x:ev.pageX - canvasxy.x,
+				y:ev.pageY - canvasxy.y };
 			var matrix = Node.VisibleMatrix();
 			if(Us.baseDragPos === null) { // we're not dragging
 				function SameNode(node1, node2) { // are the two nodes the same one?
@@ -635,8 +652,9 @@ function TreeGraph(canvasId) {
 
 		Click: function(ev) {
 			if(Us.isRendering || Us.isDragging) return;
+			var canvasxy = Util.GetPos(Us.context.canvas);
 			var matrix = Node.VisibleMatrix(),
-				cursorPt = { x:ev.pageX - Us.context.canvas.offsetLeft, y:ev.pageY - Us.context.canvas.offsetTop },
+				cursorPt = { x:ev.pageX - canvasxy.x, y:ev.pageY - canvasxy.y },
 				target = Node.AtPoint(cursorPt.x, cursorPt.y, matrix); // null if none
 			if(target === null) return;
 			if(ev.ctrlKey) { // Ctrl+click
