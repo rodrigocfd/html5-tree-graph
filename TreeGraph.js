@@ -293,7 +293,7 @@ function TreeGraph(canvasId) {
 					for(var i = 0; i < node.children.length; ++i)
 						CreateMatrix(node.children[i]);
 			}
-			CreateMatrix(Us.rootNode);
+			if(Us.rootNode !== null) CreateMatrix(Us.rootNode);
 			return matrix;
 		},
 
