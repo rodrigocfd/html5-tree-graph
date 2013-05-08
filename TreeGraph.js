@@ -17,7 +17,8 @@ function TreeGraph(canvasId) {
 		xBezierRadius: 14,
 		imgSize: 22, // if not null, will force size for all images
 		font: '11pt "Times New Roman"',
-		color: 'rgba(255,255,255,0.5)', // default for nodes without color
+		bgColor: 'rgba(255,255,255,0.5)', // default for nodes without color
+		textColor: '#121212',
 		borderColor: '#888',
 		lineColor: '#AAA',
 		animateTime: 100,
@@ -224,7 +225,7 @@ function TreeGraph(canvasId) {
 				Util.AddPropertiesIfNotExist(node, { // these are the properties available to the user
 					text: '(NO TEXT)',
 					children: [],
-					color: CONSTANTS.color,
+					color: CONSTANTS.bgColor,
 					image: null, // URL
 					data: null // any user data, will be preserved when returning the node at events
 				});
@@ -396,12 +397,15 @@ function TreeGraph(canvasId) {
 								node.posTmp.x + 1, node.posTmp.y + 1);
 						}
 					}
+					Us.context.save();
+					Us.context.fillStyle = CONSTANTS.textColor;
 					Us.context.fillText(node.text,
 						node.posTmp.x + CONSTANTS.xBoxPadding +
 							(node.imageObj !== null ?
 								(CONSTANTS.imgSize !== null ? CONSTANTS.imgSize : node.imageObj.width) + 1
 							: 0),
 						node.posTmp.y + node.rect.cy / 2);
+					Us.context.restore();
 				}
 			}
 			Us.context.restore();
