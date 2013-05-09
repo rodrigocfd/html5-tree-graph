@@ -354,6 +354,16 @@ function TreeGraph(canvasId) {
 			Node.Render(matrix, function() { Node.FlushToStorage(); });
 		},
 
+		FitParentContainer: function() {
+			// Sample container that fills a whole page:
+			// div#one { width:100%; height:100%; }
+			Us.context.canvas.style.width = '100%';
+			Us.context.canvas.style.height = '100%';
+			Us.context.canvas.width = Us.context.canvas.offsetWidth;
+			Us.context.canvas.height = Us.context.canvas.offsetHeight;
+			Node.Render(Node.VisibleMatrix()); // redraw
+		},
+
 		Paint: function(visibleMatrix, pct) {
 			Us.context.save();
 			Us.context.clearRect(0, 0, Us.context.canvas.width, Us.context.canvas.height);
@@ -745,6 +755,7 @@ function TreeGraph(canvasId) {
 		collapseAll: function() { Node.CollapseAll(); return Us.retObj; },
 		expandAll: function() { Node.ExpandAll(); return Us.retObj; },
 		countNodes: function() { return Node.Count(); },
-		redraw: function() { Node.Render(Node.VisibleMatrix()); return Us.retObj; }
+		redraw: function() { Node.Render(Node.VisibleMatrix()); return Us.retObj; },
+		fitParentContainer: function() { Node.FitParentContainer(); return Us.retObj; }
 	});
 }
