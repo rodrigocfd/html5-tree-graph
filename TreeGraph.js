@@ -202,7 +202,8 @@ function TreeGraph(canvasId) {
 						for(var i = 0; i < destNode.children.length; ++i) // supposedly the same tree
 							SetPosFromOldNode(destNode.children[i], srcNode.children[i]);
 					}
-					SetPosFromOldNode(Us.rootNode, oldTree);
+					if(oldTree.pos.x == 0 && oldTree.pos.y == 0) Placement.ResetRootPos(matrix); // previous tree was neved moved
+					else SetPosFromOldNode(Us.rootNode, oldTree);
 				} else { // this tree has never been stored
 					Placement.ResetRootPos(matrix);
 				}
