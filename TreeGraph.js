@@ -757,6 +757,7 @@ function TreeGraph(canvasId) {
 		expandAll: function() { Node.ExpandAll(); return Us.retObj; },
 		countNodes: function() { return Node.Count(); },
 		redraw: function() { Node.Render(Node.VisibleMatrix()); return Us.retObj; },
+		clear: function() { Us.context.clearRect(0, 0, Us.context.canvas.width, Us.context.canvas.height); return Us.retObj; },
 		fitParentContainer: function() { Node.FitParentContainer(); return Us.retObj; }
 	});
 }
